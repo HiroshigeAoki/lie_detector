@@ -26,19 +26,19 @@ def cal_stats(sentences: list[str], labels: list[int], tokenizer) :
 
         total_tokens += sentence_len
 
-        sents_tokens_to_check.append(f"*{sentence_len}token {sentence} | {tokens}\n")
+        sents_tokens_to_check.append(f"*{sentence_len}token\n {sentence}\n {tokens}\n")
         sents_tokens_to_check.append(f"{'===' * 20}\n")
         if '[UNK]' in tokens:
             n_unk += 1
 
     stats = f"About sentences\n" \
-            f"| total: {total_sents}" \
-            f"| max: {max_sent_len}\n" \
-            f"| min: {min_sent_len}\n" \
-            f"| mean: {round(total_tokens / total_sents, 1)}\n" \
+            f"| total: {total_sents:,}\n" \
+            f"| max sent len: {max_sent_len:,}\n" \
+            f"| min sent len: {min_sent_len:,}\n" \
+            f"| mean: {round(total_tokens / total_sents, 1):,}\n" \
             f"About tokens\n" \
-            f"| total tokens: {total_tokens}\n" \
+            f"| total tokens: {total_tokens:,}\n" \
             f"| total unk tokens: {n_unk}({round(n_unk / total_tokens * 100, 1)}%)\n" \
-            f"{', '.join([f'label{label}: {label_count.get(label)}({round(label_count.get(label) / total_sents * 100, 1)}%)'for label in label_count.keys()])}"
+            f"{', '.join([f'label {label}: {label_count.get(label)}({round(label_count.get(label) / total_sents * 100, 1)}%)'for label in label_count.keys()])}"
 
     return stats, sents_tokens_to_check

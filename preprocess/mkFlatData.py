@@ -43,7 +43,7 @@ def each_extract(filePath, ROLES_USED):
                     and subject != '楽天家 ゲルト'\
                     and role in ROLES_USED:
                 utter = clean_sent(utterance['utterance'])
-                if len(utter) != 0:
+                if len(utter) == 0:
                     utterances.append(utter)
                     labels.append(roles_and_tags_b[role])
                 else:
@@ -74,9 +74,15 @@ def extract(filePaths, path, ROLES_USED):
     valid_df = pd.DataFrame([X_valid, y_valid], index=['text', 'label']).T
     test_df = pd.DataFrame([X_test, y_test], index=['text', 'label']).T
 
-    balanced_train_df = random_under_sampling(pd.DataFrame({'text':X_train}), pd.DataFrame({'label':y_train}))
-    balanced_valid_df = random_under_sampling(pd.DataFrame({'text':X_valid}), pd.DataFrame({'label':y_valid}))
-    balanced_test_df = random_under_sampling(pd.DataFrame({'text':X_test}), pd.DataFrame({'label':y_test}))
+    balanced_train_df = random_under_sampling(pd.DataFrame({'text':X_train}),
+                                                pd.DataFrame({'label':y_train}),
+                                            )
+    balanced_valid_df = random_under_sampling(pd.DataFrame({'text':X_valid}),
+                                                pd.DataFrame({'label':y_valid}),
+                                            )
+    balanced_test_df = random_under_sampling(pd.DataFrame({'text':X_test}),
+                                                pd.DataFrame({'label':y_test}),
+                                            )
 
     unbalance_dir = path / 'unbalance'
     balance_dir = path / 'balance'
@@ -145,7 +151,7 @@ def extract(filePaths, path, ROLES_USED):
 def main(args):
     ROLES_USED = args.m_role_dict.values()
     files = glob.glob("../../../corpus/BBSjsons/*/*.json")  # 7249 files
-    dataPath = Path(f"../model/data/flat")
+    dataPath = Path(f"../model/data/flat/aaa")
     extract(files, dataPath, ROLES_USED)
 
 

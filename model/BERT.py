@@ -6,8 +6,6 @@ import torchmetrics
 import torchmetrics
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.metrics import precision_recall_fscore_support
 
 
@@ -88,7 +86,7 @@ class Classifier(pl.LightningModule):
         # confusion matrix
         cm = torchmetrics.ConfusionMatrix(num_classes=2)
         df_cm = pd.DataFrame(cm(preds.argmax(dim=1).cpu(), labels.cpu()).numpy())
-        self.print("confusion_matrix\n", df_cm.to_string())
+        self.print(f"confusion_matrix\n{df_cm.to_string()}\n")
         """
         plt.figure(figsize=(2,2))
         fig_ = sns.heatmap(df_cm, annot=True, cmap='Spectral').get_figure()
@@ -100,7 +98,7 @@ class Classifier(pl.LightningModule):
         scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), preds.argmax(dim=1).cpu())).T,
                                     columns=["precision", "recall", "f1", "support"],
                                 )
-        self.print("f1_precision_accuracy\n", scores_df.to_string())
+        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
 
 
     # 全結合層の学習率は高く、BERTの最終層の学習率は低く

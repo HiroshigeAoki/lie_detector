@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
 import pytorch_lightning as pl
+from pytorch_lightning.accelerators import accelerator
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning.accelerators.gpu import GPUAccelerator
+from pytorch_lightning.plugins import NativeMixedPrecisionPlugin
 import pandas as pd
+import glob
 import argparse
 from pathlib import Path
 
 import sys, os
 sys.path.append(os.pardir)
-from utils.unix_command import mkdirs
+
 from model.BERT import Classifier
-from model.DataModule import CreateBERTDataModule
+from model.BERTDataModule import CreateBERTDataModule
 
 
 def read_data(balance: bool):
@@ -29,8 +33,8 @@ def main(args):
 
     checkpoints_dir = f"./checkpoints/{args.model}/{'balance' if args.balance else 'unbalance'}"
     log_dir = f"./lightning_logs/{args.model}/{'balance' if args.balance else 'unbalance'}"
-    mkdirs(checkpoints_dir)
-    mkdirs(log_dir)
+    os.makedirs(checkpoints_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
 
     if args.model == 'tohoku_bert_large':
         pretrained_model = 'cl-tohoku/bert-large-japanese'
@@ -43,12 +47,21 @@ def main(args):
 
     data_module = CreateBERTDataModule(train_df, valid_df, test_df, batch_size=350, pretrained_model=pretrained_model)
 
-    model = Classifier(n_classes=2, n_epochs=N_EPOCHS, pretrained_model=pretrained_model)
+    if args.from_checkpoint:
+        ckpt_file = glob.glob(os.path.join(checkpoints_dir, '*.ckpt'))
+        model = Classifier.load_from_checkpoint(ckpt_file[0],
+                                                n_classes=2,
+                                                n_epochs=N_EPOCHS,
+                                                pretrained_model=pretrained_model,
+                                                accelerator='ddp'
+                                                )
+    else:
+        model = Classifier(n_classes=2, n_epochs=N_EPOCHS, pretrained_model=pretrained_model)
 
     # 3 epochでval_lossが0.05減少しなければ学習をストップ
     early_stop_callback = EarlyStopping(
         monitor='val_loss',
-        min_delta=0.05,
+        min_delta=0.005,
         patience=3,
         mode='min'
     )
@@ -81,6 +94,7 @@ if __name__ == "__main__":
     parser.add_argument('--balance', action='store_true')
     parser.add_argument('--gpus', type=str, default="6")
     parser.add_argument('--model', type=str, default='tohoku_bert_large')
+    parser.add_argument('--from_checkpoint', action='store_true')
     args = parser.parse_args()
 
     main(args)
