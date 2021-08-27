@@ -35,7 +35,7 @@ class CustomMeCabTagger(MeCab.Tagger):
     def parseToDataFrame(self, text: str) -> pd.DataFrame:
         """テキストを parse した結果を Pandas DataFrame として返す"""
         results = []
-        for line in self.parse(text).split('\n'):
+        for line in self(text).split('\n'):
             feature = [None for _ in range(len(type(self).COLUMNS) - 1)]
             if line == 'EOS':
                 break

@@ -130,7 +130,7 @@ def each_extract(filePath, ROLES_USED, exclude=True, auto=True, classifier=None)
         if len(utterances) == 0:
             continue
         else:
-            utterances = list(set(utterances, key=utterances.index)) # remove duplications
+            utterances = sorted(set(utterances), key=utterances.index) # remove duplications
             nested_utterances.append(utterances)
             labels.append(roles_and_tags_b[participant_role])
 
@@ -176,7 +176,7 @@ def extract(filePaths, save_dir, train_txt_dir, ROLES_USED, exclude=True, auto=T
     X_valid, y_valid = duplicate_werewolves(X_valid, y_valid)
     X_test, y_test = duplicate_werewolves(X_test, y_test)
 
-    tagger = CustomMeCabTagger("-d /usr/local/lib/mecab/dic/mecab-ipadic-neologd")
+    tagger = CustomMeCabTagger(option="-d /usr/local/lib/mecab/dic/mecab-ipadic-neologd")
 
     for _nested_utterances, _labels, type in zip([X_train, X_valid, X_test], [y_train, y_valid, y_test], ['train', 'valid', 'test']):
         X_dfs, num_utters = [], []
