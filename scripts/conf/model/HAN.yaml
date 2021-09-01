@@ -1,0 +1,6 @@
+name: HAN
+weight_drop: 0.0
+locked_drop: 0.0
+last_drop: 0.0
+lr: 1e-3
+weight_decay: 1e-2
