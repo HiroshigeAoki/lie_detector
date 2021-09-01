@@ -1,0 +1,8 @@
+特殊トークンの追加方法
+1. shファイルを実行
+2. 出来た辞書をMeCag configuration fileに登録
+
+3. /usr/local/lib/mecab/dic/ipadic/dicrc もしくは /usr/local/etc/mecabrc に以下を追加
+    userdic = /home/foo/bar/foo.dic
+　⇒他の人も使うやつなのであまり汚したくなく、今回は、cp /usr/local/etc/mecabrc ~/.mecabrcで
+　　自分のhomeにコピーしてきて追加した⇒公式ドキュメントにokって書いてある。https://taku910.github.io/mecab/dic.html
