@@ -1,12 +1,12 @@
 defaults:
   - model: HAN
 common:
-  N_EPOCHS: 1
-  batch_size: 64
+  N_EPOCHS: 50
+  batch_size: 256
   vocab_size: 32000
   word_hidden_dim: 32
   sent_hidden_dim: 32
-  padding_id: 1
+  padding_idx: 1
   embed_dim: 200
   min_freq: 5
   num_class: 2

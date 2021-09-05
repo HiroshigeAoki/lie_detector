@@ -5,12 +5,12 @@ from torchtext._torchtext import (
     Vocab as VocabPybind,
 )
 
-def build_vocab_from_training_data(vocab_size, specials: list[str] =['<unk>', '<PAD>', '<BOS>', '<EOS>']) -> Vocab:
+def build_vocab_from_training_data(split_train_txt: str, **kwargs) -> Vocab:
     def yield_tokens():
-            with open('../tokenizer/split_train.txt', 'r') as f:
+            with open(split_train_txt, 'r') as f:
                 for line in f:
                     yield line.split()
-    return build_vocab_from_iterator_with_vocab_size(yield_tokens(), min_freq=5, vocab_size=vocab_size, specials=specials)
+    return build_vocab_from_iterator_with_vocab_size(iterator=yield_tokens(), **kwargs)
 
 
 def vocab_with_vocab_size(ordered_dict: Dict, min_freq: int = 1, vocab_size: int = 32000) -> Vocab:

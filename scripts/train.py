@@ -5,8 +5,7 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.plugins import DDPPlugin
 import pandas as pd
-import glob
-import argparse
+import time
 from pathlib import Path
 import hydra
 from hydra.utils import get_original_cwd
@@ -17,19 +16,33 @@ from model.HANDataModule import CreateHANDataModule
 from preprocess.tokenizer_HAN import HANtokenizer
 
 
+class Timer():
+    def start(self):
+        self.start_time = time.time()
+
+    def end(self):
+        self.end_time = time.time()
+        return f"{self.end_time - self.start_time} sec"
+
+
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg):
     model_cfg = cfg.model
     cfg = cfg.common
 
+    timer = Timer()
+    timer.start()
     print(f"reading train data...")
     train_df = pd.read_pickle(get_original_cwd().replace('scripts', 'model') + '/data/nested/train.pkl')
-    print("done!")
+    print(f"done! [ET:{timer.end()}]")
+    timer.start()
     print(f"reading valid data...")
     valid_df = pd.read_pickle(get_original_cwd().replace('scripts', 'model') + '/data/nested/valid.pkl')
-    print("done!")
+    print(f"done! [ET:{timer.end()}]")
+    timer.start()
     print(f"reading test data...")
     test_df = pd.read_pickle(get_original_cwd().replace('scripts', 'model') + '/data/nested/test.pkl')
+    print(f'done![ET:{timer.end()}]]')
 
     checkpoints_dir = get_original_cwd() + f"/checkpoints/{model_cfg.name}"
     log_dir = get_original_cwd() + f"/lightning_logs/{model_cfg.name}"
@@ -39,10 +52,10 @@ def main(cfg):
     pl.seed_everything(111)
 
     if model_cfg.name == 'HAN':
-        tokenizer = HANtokenizer(chache=get_original_cwd().replace('scripts', 'tokenizer') + f"dim_{cfg.embed_dim}/model_fasttext.vec",
+        tokenizer = HANtokenizer(split_train_txt=get_original_cwd().replace('scripts', 'tokenizer') + '/split_train.txt',
+                                    cache=get_original_cwd().replace('scripts', 'tokenizer') + f"/dim_{cfg.embed_dim}/",
                                     vocab_size=cfg.vocab_size,
                                     min_freq=cfg.min_freq,
-                                    split_train_txt=get_original_cwd().replace('scripts', 'tokenizer') + 'split_train.txt'
                                 )
 
         data_module = CreateHANDataModule(train_df, valid_df, test_df, batch_size=cfg.batch_size, tokenizer=tokenizer)
@@ -65,7 +78,8 @@ def main(cfg):
         monitor='val_loss',
         min_delta=0.005,
         patience=3,
-        mode='min'
+        mode='min',
+        check_on_train_epoch_end=False
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -73,7 +87,8 @@ def main(cfg):
         filename='{epoch}',
         verbose=True,
         monitor='val_loss',
-        mode='min'
+        mode='min',
+        save_top_k=1
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=log_dir)
@@ -88,6 +103,8 @@ def main(cfg):
     )
 
     trainer.fit(model=model, datamodule=data_module)
+
+    # TODO: checkpoint_callbackが保存されないバグを治したらコメントアウト外す。
 
 
 if __name__ == "__main__":

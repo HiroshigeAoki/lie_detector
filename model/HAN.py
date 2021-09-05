@@ -24,6 +24,8 @@ class HierAttnNet(pl.LightningModule):
             embed_drop: float = 0.0,
             locked_drop: float = 0.0,
             last_drop: float = 0.0,
+            lr: float = 1e-3,
+            weight_decay = 1e-2
     ):
         super(HierAttnNet, self).__init__()
 
@@ -50,6 +52,9 @@ class HierAttnNet(pl.LightningModule):
         self.ld = nn.Dropout(p=last_drop)
         self.fc = nn.Linear(sent_hidden_dim * 2, num_class)
         self.criterion = nn.CrossEntropyLoss()
+
+        self.lr = lr
+        self.weight_decay = weight_decay
 
 
     def forward(self, X, y):
@@ -101,7 +106,7 @@ class HierAttnNet(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         loss, preds = self(batch['nested_utters'], batch['labels']) # call forward()
-        return {'loss': loss, 'batch_preds': preds, 'batch_labels': batch['labels']}
+        return {'loss': loss.detach(), 'batch_preds': preds.detach(), 'batch_labels': batch['labels']}
 
 
     def test_epoch_end(self, outputs):
@@ -110,7 +115,7 @@ class HierAttnNet(pl.LightningModule):
 
         # loss
         loss = self.criterion(preds, labels)
-        self.log("test_loss", loss, logger=True)
+        self.log("test_loss", loss.detach(), logger=True)
 
         # accuracy
         num_correct = (preds.argmax(dim=1) == labels).sum().item() # tensorから値に変換
@@ -134,7 +139,7 @@ class HierAttnNet(pl.LightningModule):
             f.write(scores_df.to_string())
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=1e-3, weight_decay=1e-2) #TODO change to arg_parse
+        return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay) #TODO change to arg_parse
 
 
 class SentAttnNet(pl.LightningModule):

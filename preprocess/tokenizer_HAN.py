@@ -1,3 +1,4 @@
+from numpy import not_equal
 import pandas as pd
 import torch
 from torchtext.vocab import Vectors
@@ -8,12 +9,12 @@ from preprocess.custom_vocab_func import build_vocab_from_training_data
 
 
 class HANtokenizer():
-    def __init__(self, vocab_size: int = 32000) -> None:
+    def __init__(self, cache: str, **kwargs) -> None:
         self.wakati = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd")
         self.specials = ['<unk>', '<PAD>', '<BOS>', '<EOS>']
-        self.vocab_size = vocab_size
-        self.vocab = build_vocab_from_training_data(self.vocab_size, self.specials)
-        self.vectors = Vectors(name='model_fasttext.vec', cache='../tokenizer/dim_200/')
+        kwargs['specials'] = self.specials
+        self.vocab = build_vocab_from_training_data(**kwargs)
+        self.vectors = Vectors(name='model_fasttext.vec', cache=cache)
         self.stoi = self.vocab.get_stoi()
         self.embedding_matrix = self._mk_embedding_matrix()
 
