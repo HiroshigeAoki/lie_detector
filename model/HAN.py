@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import torch
-from torch._C import device
 import torch.nn.functional as F
 from torch import nn
 import torchmetrics
@@ -133,7 +132,7 @@ class HierAttnNet(pl.LightningModule):
                                 )
         self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
 
-        with open(self.logger.log_dir, 'w') as f:
+        with open(self.logger.log_dir + "/result.csv", 'w') as f:
             f.write(df_cm.to_string())
             f.write("\n")
             f.write(scores_df.to_string())

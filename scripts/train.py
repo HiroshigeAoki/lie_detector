@@ -15,6 +15,8 @@ from model.HAN import HierAttnNet
 from model.HANDataModule import CreateHANDataModule
 from preprocess.tokenizer_HAN import HANtokenizer
 
+import warnings
+warnings.filterwarnings("ignore")
 
 class Timer():
     def start(self):
@@ -104,7 +106,7 @@ def main(cfg):
 
     trainer.fit(model=model, datamodule=data_module)
 
-    # TODO: checkpoint_callbackが保存されないバグを治したらコメントアウト外す。
+    trainer.test(ckpt_path=checkpoint_callback.best_model_path)
 
 
 if __name__ == "__main__":

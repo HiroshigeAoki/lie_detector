@@ -63,7 +63,7 @@ class CreateHANDataModule(pl.LightningDataModule):
         return DataLoader(dataset=self.train_ds, batch_size=self.batch_size,
                     shuffle=True, num_workers=self.n_cpus, pin_memory=True)
 
-    def valid_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.valid_ds, batch_size=self.batch_size,
                     shuffle=False, num_workers=self.n_cpus, pin_memory=True)
 
