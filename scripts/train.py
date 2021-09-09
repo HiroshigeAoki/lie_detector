@@ -14,6 +14,7 @@ sys.path.append(os.pardir)
 from model.HAN import HierAttnNet
 from model.HANDataModule import CreateHANDataModule
 from preprocess.tokenizer_HAN import HANtokenizer
+from utils.gmail_send import Gmailsender
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -30,7 +31,8 @@ class Timer():
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg):
     model_cfg = cfg.model
-    cfg = cfg.common
+    cfg = cfg.general
+    gmail_sender = Gmailsender(subject="実行終了通知")
 
     timer = Timer()
     timer.start()
@@ -56,19 +58,19 @@ def main(cfg):
     if model_cfg.name == 'HAN':
         tokenizer = HANtokenizer(split_train_txt=get_original_cwd().replace('scripts', 'tokenizer') + '/split_train.txt',
                                     cache=get_original_cwd().replace('scripts', 'tokenizer') + f"/dim_{cfg.embed_dim}/",
-                                    vocab_size=cfg.vocab_size,
-                                    min_freq=cfg.min_freq,
+                                    vocab_size=cfg.general.vocab_size,
+                                    min_freq=cfg.general.min_freq,
                                 )
 
         data_module = CreateHANDataModule(train_df, valid_df, test_df, batch_size=cfg.batch_size, tokenizer=tokenizer)
 
-        model = HierAttnNet(vocab_size=cfg.vocab_size,
-                                word_hidden_dim=cfg.word_hidden_dim,
-                                sent_hidden_dim=cfg.sent_hidden_dim,
-                                padding_idx=cfg.padding_idx,
-                                embed_dim=cfg.embed_dim,
+        model = HierAttnNet(vocab_size=cfg.general.vocab_size,
+                                word_hidden_dim=cfg.general.word_hidden_dim,
+                                sent_hidden_dim=cfg.general.sent_hidden_dim,
+                                padding_idx=cfg.general.padding_idx,
+                                embed_dim=cfg.general.embed_dim,
                                 embedding_matrix=tokenizer.embedding_matrix,
-                                num_class=cfg.num_class,
+                                num_class=cfg.general.num_class,
                                 weight_drop=model_cfg.weight_drop,
                                 locked_drop=model_cfg.locked_drop,
                                 last_drop=model_cfg.last_drop,
@@ -78,8 +80,8 @@ def main(cfg):
 
     early_stop_callback = EarlyStopping(
         monitor='val_loss',
-        min_delta=0.005,
-        patience=3,
+        min_delta=cfg.early_stop.min_delta,
+        patience=cfg.early_stop.patience,
         mode='min',
         check_on_train_epoch_end=False
     )
@@ -95,7 +97,7 @@ def main(cfg):
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=log_dir)
 
-    trainer = pl.Trainer(max_epochs=cfg.N_EPOCHS,
+    trainer = pl.Trainer(max_epochs=cfg.general.N_EPOCHS,
                             gpus="6",
                             precision=16,
                             progress_bar_refresh_rate=10,
@@ -105,9 +107,10 @@ def main(cfg):
     )
 
     trainer.fit(model=model, datamodule=data_module)
+    gmail_sender.send(body="training終了\ntest開始。")
 
     trainer.test(ckpt_path=checkpoint_callback.best_model_path)
-
+    gmail_sender.send(body="test終了。\ntrain.py終了")
 
 if __name__ == "__main__":
     main()
