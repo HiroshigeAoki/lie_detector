@@ -26,7 +26,7 @@ def cal_stats(sentences: list[str], labels: list[int], tokenizer) :
 
         total_tokens += sentence_len
 
-        sents_tokens_to_check.append(f"*{sentence_len}token\n {sentence}\n {tokens}\n")
+        sents_tokens_to_check.append(f"{sentence_len}token\n {sentence}\n {tokens}\n")
         sents_tokens_to_check.append(f"{'===' * 20}\n")
         if '[UNK]' in tokens:
             n_unk += 1
