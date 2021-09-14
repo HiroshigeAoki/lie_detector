@@ -1,0 +1,26 @@
+name: HAN
+
+general:
+  _target_: project.model.HAN.HierAttnNet
+  vocab_size: 32000
+  weight_drop: 0.0
+  locked_drop: 0.0
+  last_drop: 0.0
+  word_hidden_dim: 512
+  sent_hidden_dim: 512
+  padding_idx: 1
+  num_class: 2
+  optim:
+    _target_: torch.optim.AdamW
+    lr: 1e-3
+    weight_decay: 1e-2
+
+tokenizer:
+  _target_: project.tokenizer.tokenizer_HAN.HANtokenizer
+  max_mor_num: 150
+  max_utter_num: 160
+  vocab_size: 32000
+  min_freq: 5
+  embed_dim: 200
+  cache_dir: ../../../../../project/tokenizer/
+  split_train_txt: ../../../../../project/tokenizer/split_train.txt

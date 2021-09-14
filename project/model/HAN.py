@@ -5,28 +5,28 @@ import torch.nn.functional as F
 from torch import nn
 import torchmetrics
 import pytorch_lightning as pl
-from model.regularize import embedded_dropout, WeightDrop, LockedDropout
+from project.model.regularize import embedded_dropout, WeightDrop, LockedDropout
 from sklearn.metrics import precision_recall_fscore_support
+import hydra
 
 """hierarchical attention network"""
 class HierAttnNet(pl.LightningModule):
     def __init__(
             self,
+            optim,
             vocab_size: int,
             word_hidden_dim: int = 32,
             sent_hidden_dim: int = 32,
             padding_idx: int = 1,
-            embed_dim: int = 50,
             embedding_matrix=None,
             num_class: int = 2,
             weight_drop: float = 0.0,
             embed_drop: float = 0.0,
             locked_drop: float = 0.0,
             last_drop: float = 0.0,
-            lr: float = 1e-3,
-            weight_decay = 1e-2
     ):
         super(HierAttnNet, self).__init__()
+        self.save_hyperparameters()
 
         self.word_hidden_dim=word_hidden_dim
 
@@ -34,7 +34,6 @@ class HierAttnNet(pl.LightningModule):
             vocab_size=vocab_size,
             hidden_dim=word_hidden_dim,
             padding_idx=padding_idx,
-            embed_dim=embed_dim,
             embedding_matrix=embedding_matrix,
             weight_drop=weight_drop,
             embed_drop=embed_drop,
@@ -52,13 +51,12 @@ class HierAttnNet(pl.LightningModule):
         self.fc = nn.Linear(sent_hidden_dim * 2, num_class)
         self.criterion = nn.CrossEntropyLoss()
 
-        self.lr = lr
-        self.weight_decay = weight_decay
+        # self.example_input_array = (torch.from_numpy(np.random.choice(vocab_size, (160, 150))), torch.tensor(0))
 
 
     def forward(self, X, y):
         x = X.permute(1, 0, 2) # X: (batch_size, doc_len, sent_len) -> x: (doc_len, bsz, sent_len)
-        word_h_n = torch.zeros(2, X.shape[0], self.word_hidden_dim, device=self.device, dtype=torch.float16)
+        word_h_n = torch.zeros(2, X.shape[0], self.word_hidden_dim, device=self.device)
         # word_h_n = nn.init.zeros_(torch.Tensor(2, X.shape[0], self.word_hidden_dim).to)
 
         #alpha and s Tensor List
@@ -138,7 +136,7 @@ class HierAttnNet(pl.LightningModule):
             f.write(scores_df.to_string())
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay) #TODO change to arg_parse
+        return hydra.utils.instantiate(self.hparams.optim, params=self.parameters())
 
 
 class SentAttnNet(pl.LightningModule):
@@ -174,7 +172,6 @@ class WordAttnNet(pl.LightningModule):
             vocab_size: int,
             hidden_dim: int = 32,
             padding_idx: int = 1,
-            embed_dim: int = 50,
             embedding_matrix=None,
             embed_drop: float = 0.0,
             weight_drop: float = 0.0,
@@ -185,14 +182,14 @@ class WordAttnNet(pl.LightningModule):
         self.embed_drop = embed_drop
         self.weight_drop = weight_drop
 
-        if isinstance(embedding_matrix, np.ndarray):
-            self.word_embed = nn.Embedding(
-                vocab_size, embedding_matrix.shape[1], padding_idx=padding_idx
-            )
-            self.word_embed.weight = nn.Parameter(torch.tensor(embedding_matrix, dtype=torch.float16))
-            embed_dim = embedding_matrix.shape[1]
-        else:
-            self.word_embed = nn.Embedding(vocab_size, embed_dim, padding_idx=padding_idx)
+        #if isinstance(embedding_matrix, np.ndarray):
+        embed_dim = embedding_matrix.shape[1]
+        self.word_embed = nn.Embedding(
+            vocab_size, embed_dim, padding_idx=padding_idx
+        )
+        self.word_embed.weight = nn.Parameter(torch.tensor(embedding_matrix))
+        #else:
+        #    self.word_embed = nn.Embedding(vocab_size, embed_dim, padding_idx=padding_idx)
 
         self.rnn = nn.GRU(embed_dim, hidden_dim, bidirectional=True, batch_first=True)
         if weight_drop:

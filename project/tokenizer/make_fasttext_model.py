@@ -2,6 +2,7 @@ import fasttext
 import argparse
 import os, sys
 sys.path.append(os.pardir)
+from utils.gmail_send import Gmailsender
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dim", type=int, default=200)
@@ -21,3 +22,6 @@ model.save_model(f"{save_dir}/model_fasttext.bin")
 from gensim.models.fasttext import FastText
 model = FastText.load_fasttext_format(f"{save_dir}/model_fasttext.bin")
 model.wv.save_word2vec_format(f"{save_dir}/model_fasttext.vec")
+
+sender = Gmailsender()
+sender.send(f"fasttext(dim={dim})訓練終わり。")

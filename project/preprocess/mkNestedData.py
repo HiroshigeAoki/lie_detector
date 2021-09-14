@@ -186,17 +186,19 @@ def extract(filePaths, save_dir, train_txt_dir, ROLES_USED, exclude=True, auto=T
     tagger = CustomMeCabTagger(option="-d /usr/local/lib/mecab/dic/mecab-ipadic-neologd")
 
     for _nested_utterances, _labels, type in zip([X_train, X_valid, X_test], [y_train, y_valid, y_test], ['train', 'valid', 'test']):
-        X_dfs, num_utters = [], []
+        X_dfs, num_utters, parsed_dfs = [], [], []
         with trange(len(_nested_utterances), desc=f"parsing({type})...") as t:
             for _, _utterances in zip(t, _nested_utterances):
-                parsed_dfs = []
+                _parsed_dfs = []
                 num_morphemes = []
                 for _utterance in _utterances:
                     parsed_df = tagger.parseToDataFrame(_utterance) # mecabで形態素解析
                     num_morphemes.append(len(parsed_df))
-                    parsed_dfs.append(parsed_df)
-                X_df = pd.DataFrame({'raw_nested_utters': _utterances, 'parsed_nested_utters': parsed_dfs, 'num_morphemes': num_morphemes})
+                    _parsed_dfs.append(parsed_df)
+                X_df = pd.DataFrame({'raw_nested_utters': _utterances, 'num_morphemes': num_morphemes})
                 X_dfs.append(X_df)
+                parsed_df = pd.DataFrame({'parsed_nested_utters': _parsed_dfs})
+                parsed_dfs.append(parsed_df)
                 num_utters.append(len(_utterances))
         df = pd.DataFrame({'nested_utters': X_dfs, 'num_utters': num_utters, 'labels': _labels})
         print_stats(df, type, save_dir)
@@ -204,12 +206,16 @@ def extract(filePaths, save_dir, train_txt_dir, ROLES_USED, exclude=True, auto=T
         with open(f'{save_dir}/{type}.pkl', 'wb') as f:
             pickle.dump(df,  f, protocol=5)
 
+        with open(f'{save_dir}/{type}_parsed_df.pkl', 'wb') as f:
+            pickle.dump(pd.DataFrame({'parsed_dfs': parsed_dfs}), f, protocol=5)
+
 
 def main():
     args = parse_args()
     ROLES_USED = args.m_role_dict.values()
 
-    files = glob.glob("../../../corpus/BBSjsons/*/*.json")  # 7249 files
+    files = glob.glob("../../../../corpus/BBSjsons/*/*.json")  # 7249 files
+
     if args.sample:
         files = files[:3]
     train_txt_dir = f"../tokenizer/" if not args.sample else "../model/data/nested_sample"
