@@ -2,22 +2,27 @@ import pandas as pd
 import torch
 from torchtext.vocab import Vectors
 import os, sys
+from transformers import BertJapaneseTokenizer
 sys.path.append(os.pardir)
 from project.preprocess.custom_mecab_tagger import CustomMeCabTagger
 from project.preprocess.custom_vocab_func import build_vocab_from_training_data
 
 class HANtokenizer():
-    def __init__(self, cache_dir: str, embed_dim: int, max_mor_num: int, max_utter_num: int, **kwargs) -> None:
+    def __init__(self, cache_dir: str, embed_dim: int, max_mor_num: int, max_utter_num: int, tokenizer: str, data_dir , **kwargs) -> None:
         self.max_mor_num = max_mor_num
         self.max_utter_num = max_utter_num
-        self.wakati = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd")
         self.specials = ['<unk>', '<PAD>', '<BOS>', '<EOS>']
         kwargs['specials'] = self.specials
         self.embed_dim = embed_dim
-        self.vocab = build_vocab_from_training_data(**kwargs)
-        self.vectors = Vectors(name='model_fasttext.vec', cache=cache_dir + f"dim_{self.embed_dim}")
+        self.vocab = build_vocab_from_training_data(data_dir, tokenizer, **kwargs)
+        self.vectors = Vectors(name='model_fasttext.vec', cache=cache_dir +  f"{tokenizer}_vectors/dim_{self.embed_dim}")
         self.stoi = self.vocab.get_stoi()
         self.embedding_matrix = self._mk_embedding_matrix()
+
+        if tokenizer == 'mecab-wordpiece':
+            self.tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
+        elif tokenizer == 'mecab':
+            self.tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/project/tokenizer/mecab_userdic/mecabrc")
 
     def _mk_embedding_matrix(self) -> torch.tensor:
         sorted_stoi = dict(sorted(self.stoi.items(), key=lambda x: x[1]))
@@ -27,7 +32,7 @@ class HANtokenizer():
         return embedding_matrix
 
     def tokenize(self, utter: str) -> list[str]:
-        parsed_utter = self.wakati(utter).split()
+        parsed_utter = self.tokenizer.tokenize(utter)
         return [word if word in self.stoi else '<unk>' for word in parsed_utter]
 
     def numericalize(self, utter: list[str]) -> list[int]:

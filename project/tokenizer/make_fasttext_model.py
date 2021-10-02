@@ -6,22 +6,22 @@ from utils.gmail_send import Gmailsender
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dim", type=int, default=200)
+parser.add_argument("--data", type=str, default='nested')
+parser.add_argument("--tokenizer", type=str, default='mecab-wordpiece')
 args = parser.parse_args()
 
-dim = args.dim
-
-model = fasttext.train_unsupervised('split_train.txt',
+model = fasttext.train_unsupervised(f'../../data/{args.data}/split-train-{args.tokenizer}.txt',
                                         model='skipgram',
-                                        dim=dim,
-                                        minCount=5)
+                                        dim=args.dim,
+                                        minCount=1)
 
-save_dir = f'dim_{dim}'
+save_dir = f'{args.tokenizer}_vectors/dim_{args.dim}'
 os.makedirs(save_dir, exist_ok=True)
 model.save_model(f"{save_dir}/model_fasttext.bin")
 
-from gensim.models.fasttext import FastText
-model = FastText.load_fasttext_format(f"{save_dir}/model_fasttext.bin")
-model.wv.save_word2vec_format(f"{save_dir}/model_fasttext.vec")
+from gensim.models import fasttext
+model = fasttext.load_facebook_vectors(f"{save_dir}/model_fasttext.bin")
+model.save_word2vec_format(f"{save_dir}/model_fasttext.vec")
 
 sender = Gmailsender()
-sender.send(f"fasttext(dim={dim})訓練終わり。")
+sender.send(f"fasttext(dim={args.dim})訓練終わり。")
