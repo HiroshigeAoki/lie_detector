@@ -5,9 +5,9 @@ from torchtext._torchtext import (
     Vocab as VocabPybind,
 )
 
-def build_vocab_from_training_data(split_train_txt: str, **kwargs) -> Vocab:
+def build_vocab_from_training_data(data_dir: str, tokenizer: str, **kwargs) -> Vocab:
     def yield_tokens():
-            with open(split_train_txt, 'r') as f:
+            with open(f'{data_dir}split-train-{tokenizer}.txt', 'r') as f:
                 for line in f:
                     yield line.split()
     return build_vocab_from_iterator_with_vocab_size(iterator=yield_tokens(), **kwargs)

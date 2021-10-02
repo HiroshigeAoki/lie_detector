@@ -28,9 +28,8 @@ class CustomMeCabTagger(MeCab.Tagger):
         rv = (func, args, state, listitems, dictitems)
         return rv
 
-    def __call__(self, text):
-        ret = self.tagger.parse(text).rstrip()
-        return ret
+    def tokenize(self, text):
+        return self.tagger.parse(text).rstrip().split()
 
     def parseToDataFrame(self, text: str) -> pd.DataFrame:
         """テキストを parse した結果を Pandas DataFrame として返す"""
