@@ -20,7 +20,7 @@ tokenizer:
   max_mor_num: 150
   max_utter_num: 160
   vocab_size: 32000
-  min_freq: 5
+  min_freq: 1
   embed_dim: 200
+  tokenizer: 'mecab-wordpiece'
   cache_dir: ../../../../../project/tokenizer/
-  split_train_txt: ../../../../../project/tokenizer/split_train.txt

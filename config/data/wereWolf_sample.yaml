@@ -2,5 +2,5 @@ name: wereWolf_sample
 
 module:
   _target_: project.model.HANDataModule.CreateHANDataModule
-  data_dir: ../../../../../project/model/data/nested_sample/
+  data_dir: ../../../../../data/nested_sample/
   batch_size: 32

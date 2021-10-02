@@ -20,11 +20,11 @@ trainer:
   # auto_lr_find: False
   # auto_scale_batch_size: False
   # auto_select_gpus: False
-  benchmark: True
+  benchmark: False
   # check_val_every_n_epoch: 1
   # checkpoint_callback: True
   # default_root_dir:
-  # deterministic: False
+  deterministic: True
   # fast_dev_run: False
   # flush_logs_every_n_steps: 100
   gpus: "6"
