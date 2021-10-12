@@ -21,11 +21,11 @@ def main(cfg: DictConfig) -> None:
 
     pl.seed_everything(1234)
     logger.info("\n" + OmegaConf.to_yaml(cfg))
-    assert isinstance(cfg.trainer.gpus, str)
 
     if cfg.model.name == 'HAN':
         tokenizer = hydra.utils.instantiate(
             cfg.model.tokenizer,
+            data_dir=cfg.data.module.data_dir,
         )
 
         data_module = hydra.utils.instantiate(
@@ -58,14 +58,16 @@ def main(cfg: DictConfig) -> None:
         **OmegaConf.to_container(cfg.trainer),
         callbacks=[checkpoint_callback, early_stop_callback],
         logger=tb_logger,
-        plugins=DDPPlugin(find_unused_parameters=False)
+        plugins=DDPPlugin(find_unused_parameters=True)
     )
 
-    trainer.fit(model=model, datamodule=data_module)
-    gmail_sender.send(body="training終了\ntest開始。")
-
-    trainer.test(ckpt_path=checkpoint_callback.best_model_path)
-    gmail_sender.send(body="test終了。\ntrain.py終了")
+    try:
+        trainer.fit(model=model, datamodule=data_module)
+        trainer.test(ckpt_path=checkpoint_callback.best_model_path)
+    except:
+        gmail_sender.send(body="error occurred in main.py")
+    finally:
+        gmail_sender.send(body="finished main.py")
 
 if __name__ == "__main__":
     main()
