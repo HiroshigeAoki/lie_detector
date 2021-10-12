@@ -1,6 +1,7 @@
 import fasttext
 import argparse
 import os, sys
+import shutil
 sys.path.append(os.pardir)
 from utils.gmail_send import Gmailsender
 
@@ -16,6 +17,7 @@ model = fasttext.train_unsupervised(f'../../data/{args.data}/split-train-{args.t
                                         minCount=1)
 
 save_dir = f'{args.tokenizer}_vectors/dim_{args.dim}'
+shutil.rmtree(save_dir)
 os.makedirs(save_dir, exist_ok=True)
 model.save_model(f"{save_dir}/model_fasttext.bin")
 

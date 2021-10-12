@@ -6,10 +6,6 @@ import os, sys
 import neologdn
 import demoji
 
-sys.path.append(os.pardir)
-from model.load_model import load_model
-
-# TODO: load_modelをこのファイルに書いちゃう
 
 def clean_sent(sent: str) -> str:
     sent = neologdn.normalize(sent) # 表記揺れを無くす

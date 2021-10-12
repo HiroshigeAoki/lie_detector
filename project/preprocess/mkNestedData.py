@@ -21,7 +21,7 @@ def extract(filePaths, save_dir, ROLES_USED):
 
     with trange(len(filePaths), desc="extracting... ") as t:
         for _, filePath in zip(t, filePaths):
-            _nested_utterances, _labels = _extract(filePath, ROLES_USED)
+            _nested_utterances, _labels = extract_loop(filePath, ROLES_USED)
             nested_utterances += _nested_utterances
             labels += _labels
 
@@ -57,7 +57,7 @@ def extract(filePaths, save_dir, ROLES_USED):
         with open(f'{save_dir}/{type}.pkl', 'wb') as f:
             pickle.dump(df,  f, protocol=5)
 
-def _extract(filePath, ROLES_USED):
+def extract_loop(filePath, ROLES_USED):
     labels = []
     nested_utterances = [] #(user_num, utterance_num)
     participants = {}
@@ -147,7 +147,7 @@ def main():
 
     args = parser.parse_args()
 
-    files = glob.glob("../../../../corpus/BBSjsons/*/*.json")  # 7249 files
+    files = sorted(glob.glob("../../../../corpus/BBSjsons/*/*.json"))  # 7249 files
 
     save_dir = f"../../data/nested"
 

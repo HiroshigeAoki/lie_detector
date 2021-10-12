@@ -1,13 +1,13 @@
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
 from torch import nn
-import torchmetrics
+import torch.nn.functional as F
+from torchmetrics import Accuracy, MetricCollection, Precision, Recall, F1, ConfusionMatrix
 import pytorch_lightning as pl
-from project.model.regularize import embedded_dropout, WeightDrop, LockedDropout
-from sklearn.metrics import precision_recall_fscore_support
 import hydra
+
+from project.model.regularize import embedded_dropout, WeightDrop, LockedDropout
 
 """hierarchical attention network"""
 class HierAttnNet(pl.LightningModule):
@@ -51,12 +51,30 @@ class HierAttnNet(pl.LightningModule):
         self.fc = nn.Linear(sent_hidden_dim * 2, num_class)
         self.criterion = nn.CrossEntropyLoss()
 
+        metrics = MetricCollection([
+            Accuracy(num_classes=2, average='macro'),
+            Precision(num_classes=2, average='macro'),
+            Recall(num_classes=2, average='macro'),
+            F1(num_classes=2, average='macro')
+        ])
+
+        self.train_metrics = metrics.clone(prefix='train_')
+        self.valid_metrics = metrics.clone(prefix='valid_')
+
+        self.test_metrics = MetricCollection([
+            Accuracy(num_classes=2, average='macro'),
+            Precision(num_classes=2, average='macro'),
+            Recall(num_classes=2, average='macro'),
+            F1(num_classes=2, average='macro'),
+            ConfusionMatrix(num_classes=2)
+        ])
+
         # self.example_input_array = (torch.from_numpy(np.random.choice(vocab_size, (160, 150))), torch.tensor(0))
 
 
     def forward(self, X, y):
         x = X.permute(1, 0, 2) # X: (batch_size, doc_len, sent_len) -> x: (doc_len, bsz, sent_len)
-        word_h_n = torch.zeros(2, X.shape[0], self.word_hidden_dim, device=self.device)
+        word_h_n = torch.zeros(2, X.shape[0], self.word_hidden_dim)
         # word_h_n = nn.init.zeros_(torch.Tensor(2, X.shape[0], self.word_hidden_dim).to)
 
         #alpha and s Tensor List
@@ -79,91 +97,55 @@ class HierAttnNet(pl.LightningModule):
 
 
     def training_step(self, batch, batch_idx):
-        loss, preds = self(batch['nested_utters'], batch['labels']) # call forward()
+        loss, preds = self(batch['nested_utters'], batch['labels'])
         return {'loss': loss, 'batch_preds': preds, 'batch_labels': batch['labels']}
 
+    def training_step_end(self, outputs):
+        output = self.train_metrics(outputs['preds'], outputs['batch_labels'])
+        self.log_dict(output)
+
+    def training_epoch_end(self, outputs):
+        epoch_preds = torch.cat([x['batch_preds'] for x in outputs])
+        epoch_labels = torch.cat([x['batch_labels'] for x in outputs])
+        epoch_loss = self.criterion(epoch_preds, epoch_labels)
+        self.log("train_loss", epoch_loss, logger=True)
+        self.log_dict(self.train_metrics.compute(), logger=True)
 
     def validation_step(self, batch, batch_idx):
-        loss, preds = self(batch['nested_utters'], batch['labels']) # call forward()
+        loss, preds = self(batch['nested_utters'], batch['labels'])
         return {'loss': loss, 'batch_preds': preds, 'batch_labels': batch['labels']}
 
+    def validation_step_end(self, outputs):
+        output = self.valid_metrics(outputs['preds'], outputs['batch_labels'])
+        self.log_dict(output)
 
     def validation_epoch_end(self, outputs):
-        # loss
         epoch_preds = torch.cat([x['batch_preds'] for x in outputs])
         epoch_labels = torch.cat([x['batch_labels'] for x in outputs])
         epoch_loss = self.criterion(epoch_preds, epoch_labels)
         self.log("val_loss", epoch_loss, logger=True)
-
-        # accuracy
-        num_correct = (epoch_preds.argmax(dim=1) == epoch_labels).sum().item() # tensorから値に変換
-        epoch_accuracy = num_correct / len(epoch_labels)
-        self.log("val_accuracy", epoch_accuracy, logger=True)
-
+        self.log_dict(self.valid_metrics.compute(), logger=True)
 
     def test_step(self, batch, batch_idx):
         loss, preds = self(batch['nested_utters'], batch['labels']) # call forward()
         return {'loss': loss.detach(), 'batch_preds': preds.detach(), 'batch_labels': batch['labels']}
 
+    def test_step_end(self, outputs):
+        output = self.test_metrics(outputs['preds'], outputs['batch_labels'])
+        self.cm(outputs['preds'], outputs['batch_labels'])
+        self.log_dict(output)
 
     def test_epoch_end(self, outputs):
         preds = torch.cat([x['batch_preds'] for x in outputs])
         labels = torch.cat([x['batch_labels'] for x in outputs])
-
-        # loss
-        loss = self.criterion(preds, labels)
-        self.log("test_loss", loss.detach(), logger=True)
-
-        # accuracy
-        num_correct = (preds.argmax(dim=1) == labels).sum().item() # tensorから値に変換
-        epoch_accuracy = num_correct / len(labels)
-        self.log("test_accuracy", epoch_accuracy, logger=True)
-
-        # confusion matrix
-        cm = torchmetrics.ConfusionMatrix(num_classes=2)
-        df_cm = pd.DataFrame(cm(preds.argmax(dim=1).cpu(), labels.cpu()).numpy())
-        self.print(f"confusion_matrix\n{df_cm.to_string()}\n")
-
-        #f1 precision recall
-        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), preds.argmax(dim=1).cpu())).T,
-                                    columns=["precision", "recall", "f1", "support"],
-                                )
-        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
-
-        with open(self.logger.log_dir + "/result.csv", 'w') as f:
-            f.write(df_cm.to_string())
-            f.write("\n")
-            f.write(scores_df.to_string())
+        epoch_loss = self.criterion(preds, labels)
+        self.log("test_loss", epoch_loss, logger=True)
+        self.log_dict(self.test_metrics.compute(), logger=True)
 
     def configure_optimizers(self):
         return hydra.utils.instantiate(self.hparams.optim, params=self.parameters())
 
 
-class SentAttnNet(pl.LightningModule):
-    def __init__(
-            self,
-            word_hidden_dim: int = 32,
-            sent_hidden_dim: int = 32,
-            weight_drop: float = 0.0,
-            padding_idx: int = 1,
-    ):
-        super(SentAttnNet, self).__init__()
-
-        self.rnn = nn.GRU(
-            word_hidden_dim * 2, sent_hidden_dim, bidirectional=True, batch_first=True
-        )
-        if weight_drop:
-            self.rnn = WeightDrop(
-                self.rnn, ["weight_hh_l0", "weight_hh_l0_reverse"], dropout=weight_drop, device=self.device
-            )
-
-        self.sent_attn = AttentionWithContext(sent_hidden_dim * 2)
-
-
-    def forward(self, X): #will receive a tensor of dim(bsz, doc_len, word_hidden_dim * 2)
-        h_t, h_n = self.rnn(X)
-        a, v = self.sent_attn(h_t)
-        return a, v #doc vector (bsz, sent_hidden_dim*2)
 
 
 class WordAttnNet(pl.LightningModule):
@@ -222,13 +204,37 @@ class WordAttnNet(pl.LightningModule):
         return a, s.unsqueeze(1), h_n
 
 
+
+class SentAttnNet(pl.LightningModule):
+    def __init__(
+            self,
+            word_hidden_dim: int = 32,
+            sent_hidden_dim: int = 32,
+            weight_drop: float = 0.0,
+            padding_idx: int = 1,
+    ):
+        super(SentAttnNet, self).__init__()
+
+        self.rnn = nn.GRU(
+            word_hidden_dim * 2, sent_hidden_dim, bidirectional=True, batch_first=True
+        )
+        if weight_drop:
+            self.rnn = WeightDrop(
+                self.rnn, ["weight_hh_l0", "weight_hh_l0_reverse"], dropout=weight_drop, device=self.device
+            )
+
+        self.sent_attn = AttentionWithContext(sent_hidden_dim * 2)
+
+
+    def forward(self, X): #will receive a tensor of dim(bsz, doc_len, word_hidden_dim * 2)
+        h_t, h_n = self.rnn(X)
+        a, v = self.sent_attn(h_t)
+        return a, v #doc vector (bsz, sent_hidden_dim*2)
+
+
 class AttentionWithContext(pl.LightningModule):
     def __init__(self, hidden_dim: int):
-        """[summary]
 
-        Args:
-            hidden_dim (int): This hidden dim is twice as big as the hidden dim in other methods since it is the concatenation of forward and backward.
-        """
         super(AttentionWithContext, self).__init__()
 
         self.atten = nn.Linear(hidden_dim, hidden_dim)
