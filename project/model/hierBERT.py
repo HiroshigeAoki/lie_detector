@@ -30,7 +30,7 @@ class HierBERT(pl.LightningModule):
             hidden_dim=self.hidden_dim
         )
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids: torch.FloatTensor, attention_mask: torch.LongTensor, pad_sent_num: torch.tensor):
         input_ids = input_ids.permute(1,0,2)
         attention_mask = attention_mask.permute(1,0,2)
 
@@ -49,12 +49,10 @@ class HierBERT(pl.LightningModule):
         # TODO: hidden_dimやbatchなどを引数で、selfに登録して、assertでshapeを確認する。
         input_ids = torch.stack(pooler_output_word_level).permute(1, 0, 2)
         assert input_ids.shape == (self.batch_size, self.max_doc_len, self.hidden_dim), gen_assertion_message(target_name='input_ids', target=input_ids, expected=(self.batch_size, self.max_doc_len, self.hidden_dim))
-        # TODO: paddingした文の数を記録しておいて、attention maskをかける。
-        attention_mask = torch.ones_like(input_ids)
 
         last_hidden_state_sent_level, pooler_output_sent_level = [], []
-        for _input_ids, _attention_mask in zip(input_ids, attention_mask):
-            _last_hidden_state, _pooler_output = self.wordAttennet(input_ids=_input_ids, attention_mask=_attention_mask).values()
+        for _input_ids, _pad_sent_len in zip(input_ids, pad_sent_num):
+            _last_hidden_state, _pooler_output = self.wordAttennet(input_ids=_input_ids, pad_sent_num=_pad_sent_len)
             last_hidden_state_word_level.append(_last_hidden_state)
             pooler_output_word_level.append(_pooler_output)
         # TODO: ld, fc, criterionを通して予測をする。
@@ -83,7 +81,7 @@ class WordAttention(nn.Module):
         for param in self.bert.parameters():
             param.requires_grad = False
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids: torch.LongTensor, attention_mask: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         assert input_ids.shape == (self.batch_size, self.hidden_dim), gen_assertion_message(target_name=input_ids, target=input_ids.shape, expected=(self.batch_size, self.hidden_dim))
         assert attention_mask.shape == (self.batch_size, self.hidden_dim), gen_assertion_message(target_name='attention_mask', target=attention_mask, expected=(self.batch_size, self.hidden_dim))
         last_hidden_state, pooler_output = self.bert(input_ids, attention_mask)
@@ -105,7 +103,9 @@ class SentAttention(nn.Module):
 
         self.bert = BertModel()
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids: torch.FloatTensor,  pad_sent_num: torch.tensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
+        attention_mask = torch.ones_like(input_ids)
+        attention_mask[-pad_sent_num:] = torch.zeros(pad_sent_num)
         last_hidden_state, pooler_output = self.bert(input_ids, attention_mask)
         return last_hidden_state, pooler_output
 

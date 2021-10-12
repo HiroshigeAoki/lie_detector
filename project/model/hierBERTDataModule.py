@@ -21,9 +21,9 @@ class CreateDataset(Dataset):
         nested_utters = df_row['raw_nested_utters']
         labels = self.df.loc[:,'labels'].iloc[index]
 
-        input_ids, attention_mask = self.tokenizer.encode(nested_utters)
+        input_ids, attention_mask, pad_sent_num = self.tokenizer.encode(nested_utters)
 
-        return dict(input_ids=input_ids, attention_mask=attention_mask, labels=torch.tensor(labels))
+        return dict(input_ids=input_ids, attention_mask=attention_mask, labels=torch.tensor(labels), pad_sent_num=torch.tensor(pad_sent_num))
 
 
 class CreateHierBertDataModule(pl.LightningDataModule):
