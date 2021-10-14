@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore")
 
 @hydra.main(config_path="config", config_name="defaults")
 def main(cfg: DictConfig) -> None:
-    gmail_sender = Gmailsender(subject="実行終了通知")
+    gmail_sender = Gmailsender(subject=f"Execution end notification (model:{cfg.model.name}, data:{cfg.data.name})")
 
     pl.seed_everything(1234)
     logger.info("\n" + OmegaConf.to_yaml(cfg))
@@ -25,17 +25,33 @@ def main(cfg: DictConfig) -> None:
     if cfg.model.name == 'HAN':
         tokenizer = hydra.utils.instantiate(
             cfg.model.tokenizer,
-            data_dir=cfg.data.module.data_dir,
+            data_dir=cfg.data.dir,
         )
 
         data_module = hydra.utils.instantiate(
-            cfg.data.module,
+            cfg.model.data_module,
+            data_dir=cfg.data.dir,
             tokenizer=tokenizer,
         )
 
         model = hydra.utils.instantiate(
             cfg.model.general,
+            optim=cfg.optim,
             embedding_matrix=tokenizer.embedding_matrix,
+            _recursive_=False,
+        )
+
+    elif cfg.model.name=='HierBERT':
+        # TODO: 色々書く。
+        data_module = hydra.utils.instantiate(
+            cfg.model.data_module,
+            data_dir=cfg.data.dir,
+            _recursive_=False,
+        )
+
+        model = hydra.utils.instantiate(
+            cfg.model.general,
+            optim=cfg.optim,
             _recursive_=False,
         )
 
@@ -52,6 +68,9 @@ def main(cfg: DictConfig) -> None:
         save_top_k=1
     )
 
+    #TODO: sentence level がGRUのバージョンと分ける。
+    # elif cfg.model.name=='HierBERT' and
+
     tb_logger = pl_loggers.TensorBoardLogger(".", "", "", log_graph=True, default_hp_metric=False)
 
     trainer = pl.Trainer(
@@ -64,10 +83,10 @@ def main(cfg: DictConfig) -> None:
     try:
         trainer.fit(model=model, datamodule=data_module)
         trainer.test(ckpt_path=checkpoint_callback.best_model_path)
-    except:
-        gmail_sender.send(body="error occurred in main.py")
+    except Exception as e:
+        gmail_sender.send(body=f"error occurred in train.py.\n\n{type(e)}\n{e}")
     finally:
-        gmail_sender.send(body="finished main.py")
+        gmail_sender.send(body=f"train.py finished.")
 
 if __name__ == "__main__":
     main()
