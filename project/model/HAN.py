@@ -1,5 +1,3 @@
-import numpy as np
-import pandas as pd
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -28,8 +26,6 @@ class HierAttnNet(pl.LightningModule):
         super(HierAttnNet, self).__init__()
         self.save_hyperparameters()
 
-        self.word_hidden_dim=word_hidden_dim
-
         self.wordattnnet = WordAttnNet(
             vocab_size=vocab_size,
             hidden_dim=word_hidden_dim,
@@ -47,7 +43,7 @@ class HierAttnNet(pl.LightningModule):
             weight_drop=weight_drop,
         )
 
-        self.ld = nn.Dropout(p=last_drop)
+        self.last_drop = nn.Dropout(p=last_drop)
         self.fc = nn.Linear(sent_hidden_dim * 2, num_class)
         self.criterion = nn.CrossEntropyLoss()
 
@@ -74,7 +70,7 @@ class HierAttnNet(pl.LightningModule):
 
     def forward(self, X, y):
         x = X.permute(1, 0, 2) # X: (batch_size, doc_len, sent_len) -> x: (doc_len, bsz, sent_len)
-        word_h_n = torch.zeros(2, X.shape[0], self.word_hidden_dim)
+        word_h_n = torch.zeros(2, X.shape[0], self.hparams.word_hidden_dim)
         # word_h_n = nn.init.zeros_(torch.Tensor(2, X.shape[0], self.word_hidden_dim).to)
 
         #alpha and s Tensor List
@@ -90,7 +86,7 @@ class HierAttnNet(pl.LightningModule):
         #Importance attention weights per sentence in doc and document representation
         doc_a, doc_s = self.sentattennet(sent_s)
         self.doc_a = doc_a.permute(0, 2, 1)
-        doc_s = self.ld(doc_s)
+        doc_s = self.last_drop(doc_s)
         preds = self.fc(doc_s) # (bsz, class_num)
         loss = self.criterion(preds, y)
         return loss, preds
@@ -160,9 +156,9 @@ class WordAttnNet(pl.LightningModule):
             locked_drop: float = 0.0,
     ):
         super(WordAttnNet, self).__init__()
+        self.save_hyperparameters()
+
         self.lockdrop = LockedDropout(p=locked_drop)
-        self.embed_drop = embed_drop
-        self.weight_drop = weight_drop
 
         #if isinstance(embedding_matrix, np.ndarray):
         embed_dim = embedding_matrix.shape[1]
@@ -176,7 +172,7 @@ class WordAttnNet(pl.LightningModule):
         self.rnn = nn.GRU(embed_dim, hidden_dim, bidirectional=True, batch_first=True)
         if weight_drop:
             self.rnn = WeightDrop(
-                self.rnn, ["weight_hh_l0", "weight_hh_l0_reverse"], dropout=weight_drop, device=self.device
+                self.rnn, ["weight_hh_l0", "weight_hh_l0_reverse"], dropout=weight_drop# , device=self.device #必要かも、、
             )
         self.word_atten = AttentionWithContext(hidden_dim * 2) # since GRU is bidirectional
 
@@ -192,7 +188,7 @@ class WordAttnNet(pl.LightningModule):
         """
         if self.embed_drop:
             embed = embedded_dropout(
-                self.word_embed, X.long(), dropout=self.embed_drop if self.training else 0,
+                self.word_embed, X.long(), dropout=self.hparams.embed_drop if self.training else 0,
             )
         else:
             embed = self.word_embed(X.long())
@@ -204,7 +200,7 @@ class WordAttnNet(pl.LightningModule):
         return a, s.unsqueeze(1), h_n
 
 
-
+# TODO: インターフェースをhierBERT.pyのsentlevelBERTと同じにする。
 class SentAttnNet(pl.LightningModule):
     def __init__(
             self,

@@ -1,6 +1,3 @@
 name: wereWolf
 
-module:
-  _target_: project.model.HANDataModule.CreateHANDataModule
-  data_dir: ../../../../../data/nested/
-  batch_size: 32
+dir: ../../../../../data/nested/
