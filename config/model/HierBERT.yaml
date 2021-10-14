@@ -20,13 +20,13 @@ general:
     # position_embedding_type: "absolute" # Type of position embedding. Choose one of "absolute", "relative_key", "relative_key_query". For positional embeddings use "absolute". For more information on "relative_key", please refer to Self-Attention with Relative Position Representations (Shaw et al.). For more information on "relative_key_query", please refer to Method 4 in Improve Transformer Models with Better Relative Position Embeddings (Huang et al.).
     # use_cache: True # Whether or not the model should return the last key/values attentions (not used by all models). Only relevant if config.is_decoder=True.
     # classifier_dropout: 0.0 # The dropout ratio for the classification head.
-  optim:
-    _target_: torch.optim.AdamW
-    lr: 1e-3
-    # betas: (0.9, 0.999)
-    # eps: 1e-8
-    weight_decay: 1e-2
-    # amsgrad: False
+  #optim:
+  #  _target_: torch.optim.AdamW
+  #  lr: 1e-3
+  #  # betas: (0.9, 0.999)
+  #  # eps: 1e-8
+  #  weight_decay: 1e-2
+  #  # amsgrad: False
 
 data_module:
   _target_: project.model.HierBERTDataModule

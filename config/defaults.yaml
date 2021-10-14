@@ -1,12 +1,14 @@
 hydra:
   run:
-    dir: outputs/${data.name}/${model.name}/${experiment}/${now:%Y-%m-%d_%H%M%S}
+    dir: outputs/${data.name}/${model.name}/${experiment}/${name}
 
 experiment: baseline
+name: ${now:%Y-%m-%d_%H%M%S}
 
 defaults:
   - model: HAN
   - data: wereWolf
+  - optim: AdamW
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
