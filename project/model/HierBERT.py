@@ -10,20 +10,20 @@ from transformers.models.bert.modeling_bert import BertPreTrainedModel
 import hydra
 
 from project.model.HAN import SentAttnNet
+from project.utils.gen_assertion import gen_torch_tensor_shape_assertion
 
 class HierchicalBERT(pl.LightningModule):
     def __init__(
         self,
         batch_size: int,
-        classifier_drop: float,
         hidden_size: int,
-        last_drop: int,
         sent_length: int,
         doc_length: int,
         num_labels: int,
         optim,
         pretrained_model: str,
         sent_level_BERT_config: BertConfig,
+        use_ave_pooler_output: bool,
         use_sent_level_gru: bool,
         # TODO: dropout率については、後で考える。
         # TODO: sent levelをbigruにしたモデルは、別プログラムに書いたほうが良いかも
@@ -35,12 +35,19 @@ class HierchicalBERT(pl.LightningModule):
         sent_level_BERT_config = hydra.utils.instantiate(sent_level_BERT_config)
 
         self.word_level_bert = BERTWordLevel(
+            sent_length=sent_length,
+            hidden_size=hidden_size,
+            batch_size=batch_size,
             pretrained_model=pretrained_model,
         )
 
         self.sent_level_bert = BERTSentLevel(
+            doc_length=doc_length,
+            hidden_size=hidden_size,
+            batch_size=batch_size,
             hidden_size=hidden_size,
             config=sent_level_BERT_config,
+            use_ave_pooler_output=use_ave_pooler_output,
         )
 
         # TODO: sentレベルbigruをどうするか、、
@@ -55,7 +62,8 @@ class HierchicalBERT(pl.LightningModule):
         )
 
         self.classifier = Classifier(
-            config=sent_level_BERT_config
+            num_labels=num_labels,
+            config=sent_level_BERT_config,
         )
 
         self.loss_fct = CrossEntropyLoss()
@@ -82,8 +90,8 @@ class HierchicalBERT(pl.LightningModule):
         input_ids = input_ids.permute(1,0,2)
         attention_mask = attention_mask.permute(1,0,2)
 
-        gen_assertion('input_ids', input_ids, (self.hparams.sent_length, self.hparams.batch_size, self.hparams.doc_length))
-        gen_assertion('attention_mask', attention_mask, (self.hparams.sent_length, self.hparams.batch_size, self.hparams.doc_length))
+        gen_torch_tensor_shape_assertion('input_ids', input_ids, (self.hparams.sent_length, self.hparams.batch_size, self.hparams.doc_length))
+        gen_torch_tensor_shape_assertion('attention_mask', attention_mask, (self.hparams.sent_length, self.hparams.batch_size, self.hparams.doc_length))
 
         last_hidden_state_word_level, pooler_output_word_level = [], []
         for _input_ids, _attention_mask in zip(input_ids, attention_mask):
@@ -104,7 +112,7 @@ class HierchicalBERT(pl.LightningModule):
         return {'loss': loss, 'batch_preds': logits, 'batch_labels': batch['labels']}
 
     def training_step_end(self, outputs):
-        output = self.train_metrics(outputs['logits'], outputs['batch_labels'])
+        output = self.train_metrics(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
     def training_epoch_end(self, outputs):
@@ -119,7 +127,7 @@ class HierchicalBERT(pl.LightningModule):
         return {'loss': loss, 'batch_preds': logits, 'batch_labels': batch['labels']}
 
     def validation_step_end(self, outputs):
-        output = self.valid_metrics(outputs['logits'], outputs['batch_labels'])
+        output = self.valid_metrics(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
     def validation_epoch_end(self, outputs):
@@ -134,8 +142,8 @@ class HierchicalBERT(pl.LightningModule):
         return {'loss': loss.detach(), 'batch_preds': logits.detach(), 'batch_labels': batch['labels']}
 
     def test_step_end(self, outputs):
-        output = self.test_metrics(outputs['logits'], outputs['batch_labels'])
-        self.cm(outputs['logits'], outputs['batch_labels'])
+        output = self.test_metrics(outputs['batch_preds'], outputs['batch_labels'])
+        self.cm(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
     def test_epoch_end(self, outputs):
@@ -176,8 +184,8 @@ class BERTWordLevel(pl.LightningModule):
             param.requires_grad = False
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
-        gen_assertion(input_ids, input_ids.shape, (self.hparams.batch_size, self.hparams.hidden_size))
-        gen_assertion('attention_mask', attention_mask, (self.hparams.batch_size, self.hparams.hidden_size))
+        gen_torch_tensor_shape_assertion(input_ids, input_ids.shape, (self.hparams.batch_size, self.hparams.hidden_size))
+        gen_torch_tensor_shape_assertion('attention_mask', attention_mask, (self.hparams.batch_size, self.hparams.hidden_size))
         last_hidden_state, pooled_output = self.bert(input_ids, attention_mask)
         return last_hidden_state, pooled_output
 
@@ -197,16 +205,16 @@ class BERTSentLevel(pl.LightningModule):
 
     def forward(self, inputs_embeds: torch.FloatTensor,  pad_sent_num: torch.tensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         # TODO: 諸々決まったら、返り値型・数宣言の変更をする。
-        gen_assertion('inputs_embeds', inputs_embeds, (self.hparams.batch_size, self.hparams.doc_length, self.hparams.hidden_size))
+        gen_torch_tensor_shape_assertion('inputs_embeds', inputs_embeds, (self.hparams.batch_size, self.hparams.doc_length, self.hparams.hidden_size))
         attention_mask = torch.ones(self.hparams.batch_size, self.hparams.doc_length)
         # apply masks to pad sentences.
         attention_mask[-pad_sent_num:] = torch.zeros(pad_sent_num)
         last_hidden_state, pooled_output, attentions = self.bert(inputs_embeds=inputs_embeds, attention_mask=attention_mask)
         if self.use_ave_pooler_output:
             pooled_output = last_hidden_state.mean(dim=1)
-        gen_assertion('pooled_output', pooled_output, (self.hparams.batch_size, self.hparams.hidden_size))
+        gen_torch_tensor_shape_assertion('pooled_output', pooled_output, (self.hparams.batch_size, self.hparams.hidden_size))
         # TODO: attentionsの平均を取りたいけど、ミスるの怖いから、notebookで実験してからやる。↓で平均を取る。
-        gen_assertion('attention', attentions, (self.hparams.batch_size, self.hparams.config.num_head, self.hparams.doc_length, self.hparams.doc_length))
+        gen_torch_tensor_shape_assertion('attention', attentions, (self.hparams.batch_size, self.hparams.config.num_head, self.hparams.doc_length, self.hparams.doc_length))
         return pooled_output, attentions
 
 
@@ -230,7 +238,3 @@ class Classifier(BertPreTrainedModel):
         logits = self.classifier(pooled_output)
         loss = self.loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
         return loss, logits
-
-
-def gen_assertion(target_name: str, target: torch.tensor, expected: Tuple) -> str:
-    assert target.shape == expected, f'The shape of {target_name} is abnormal. {target_name}.shape:{target.shape}, expected:{expected}'

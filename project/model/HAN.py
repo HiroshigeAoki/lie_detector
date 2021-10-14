@@ -97,7 +97,7 @@ class HierAttnNet(pl.LightningModule):
         return {'loss': loss, 'batch_preds': preds, 'batch_labels': batch['labels']}
 
     def training_step_end(self, outputs):
-        output = self.train_metrics(outputs['preds'], outputs['batch_labels'])
+        output = self.train_metrics(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
     def training_epoch_end(self, outputs):
@@ -112,7 +112,7 @@ class HierAttnNet(pl.LightningModule):
         return {'loss': loss, 'batch_preds': preds, 'batch_labels': batch['labels']}
 
     def validation_step_end(self, outputs):
-        output = self.valid_metrics(outputs['preds'], outputs['batch_labels'])
+        output = self.valid_metrics(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
     def validation_epoch_end(self, outputs):
@@ -127,8 +127,8 @@ class HierAttnNet(pl.LightningModule):
         return {'loss': loss.detach(), 'batch_preds': preds.detach(), 'batch_labels': batch['labels']}
 
     def test_step_end(self, outputs):
-        output = self.test_metrics(outputs['preds'], outputs['batch_labels'])
-        self.cm(outputs['preds'], outputs['batch_labels'])
+        output = self.test_metrics(outputs['batch_preds'], outputs['batch_labels'])
+        self.cm(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
     def test_epoch_end(self, outputs):
