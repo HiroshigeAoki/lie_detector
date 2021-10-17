@@ -5,6 +5,7 @@ general:
   vocab_size: 32000
   weight_drop: 0.0
   locked_drop: 0.0
+  embed_drop: 0.0
   last_drop: 0.0
   word_hidden_dim: 512
   sent_hidden_dim: 512
@@ -17,8 +18,8 @@ data_module:
 
 tokenizer:
   _target_: src.tokenizer.tokenizer_HAN.HANtokenizer
-  max_mor_num: 150
-  max_utter_num: 160
+  sent_length: 160
+  doc_length: 160
   vocab_size: 32000
   min_freq: 1
   embed_dim: 200

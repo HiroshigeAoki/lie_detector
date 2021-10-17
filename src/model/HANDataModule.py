@@ -28,7 +28,7 @@ class CreateHANDataset(Dataset):
 
         encoding = self.tokenizer.encode(nested_utters)
 
-        assert encoding.shape == (self.tokenizer.max_utter_num, self.tokenizer.max_mor_num), f"encoding shape: {encoding.shape} is wrong."
+        assert encoding.shape == (self.tokenizer.doc_length, self.tokenizer.sent_length), f"encoding shape: {encoding.shape} is wrong."
 
         return dict(nested_utters=encoding, labels=torch.tensor(labels))
 

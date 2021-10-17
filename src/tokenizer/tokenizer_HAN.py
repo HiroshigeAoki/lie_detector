@@ -8,9 +8,9 @@ from src.preprocess.custom_mecab_tagger import CustomMeCabTagger
 from src.preprocess.custom_vocab_func import build_vocab_from_training_data
 
 class HANtokenizer():
-    def __init__(self, cache_dir: str, embed_dim: int, max_mor_num: int, max_utter_num: int, tokenizer: str, data_dir , **kwargs) -> None:
-        self.max_mor_num = max_mor_num
-        self.max_utter_num = max_utter_num
+    def __init__(self, cache_dir: str, embed_dim: int, sent_length: int, doc_length: int, tokenizer: str, data_dir , **kwargs) -> None:
+        self.sent_length = sent_length
+        self.doc_length = doc_length
         self.specials = ['<unk>', '<PAD>', '<BOS>', '<EOS>']
         kwargs['specials'] = self.specials
         self.embed_dim = embed_dim
@@ -39,17 +39,17 @@ class HANtokenizer():
         return self.vocab.lookup_indices(list(utter))
 
     def padding_word_level(self, utter: list[int]) -> list[int]:
-        if len(utter) > self.max_mor_num:
-            return utter[:self.max_mor_num]
+        if len(utter) > self.sent_length:
+            return utter[:self.sent_length]
         else:
-            padded = utter + [1 for _ in range(self.max_mor_num - len(utter))]
+            padded = utter + [1 for _ in range(self.sent_length - len(utter))]
             return padded
 
     def padding_sent_level(self, nested_utters: list[torch.tensor]) -> list[torch.tensor]:
-        if len(nested_utters) > self.max_utter_num:
-            return nested_utters[:self.max_utter_num]
+        if len(nested_utters) > self.doc_length:
+            return nested_utters[:self.doc_length]
         else:
-            padding = [[1 for _ in range(self.max_mor_num)] for _ in range(self.max_utter_num - len(nested_utters))]
+            padding = [[1 for _ in range(self.sent_length)] for _ in range(self.doc_length - len(nested_utters))]
             padded = nested_utters + padding
             return padded
 

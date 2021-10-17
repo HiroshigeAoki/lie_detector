@@ -1,5 +1,11 @@
 name: HierBERT
 
+model:
+  num_labels: 2
+  _target_: src.model.HierBERT.HierchicalBERT
+  use_ave_pooled_output: True
+  output_attentions: True
+
 tokenizer:
   _target_: src.tokenizer.tokenizer_HierBERT.HierBertTokenizer
   sent_length: 160
@@ -9,13 +15,6 @@ tokenizer:
 data_module:
   _target_: src.model.HierBERTDataModule.CreateHierBertDataModule
   batch_size: 32
-
-model:
-  num_labels: 2
-  _target_: src.model.HierBERT.HierchicalBERT
-  pretrained_model: 'cl-tohoku/bert-large-japanese'
-  use_ave_pooled_output: True
-  output_attentions: True
 
 sent_level_BERT_config:
   _target_: transformers.BertConfig

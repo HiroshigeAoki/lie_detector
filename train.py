@@ -42,7 +42,7 @@ def main(cfg: DictConfig) -> None:
             _recursive_=False,
         )
 
-    elif cfg.model.name=='HierBERT':
+    elif cfg.model.name=='HierBERT' or cfg.model.name=='HierRoBERT':
         # TODO: 色々書く。
         data_module = hydra.utils.instantiate(
             cfg.model.data_module,
@@ -53,6 +53,7 @@ def main(cfg: DictConfig) -> None:
 
         model = hydra.utils.instantiate(
             cfg.model.model,
+            pretrained_model=cfg.model.tokenizer.pretrained_model,
             sent_level_BERT_config=cfg.model.sent_level_BERT_config,
             optim=cfg.optim,
             _recursive_=False,
@@ -80,7 +81,7 @@ def main(cfg: DictConfig) -> None:
         **OmegaConf.to_container(cfg.trainer),
         callbacks=[checkpoint_callback, early_stop_callback],
         logger=tb_logger,
-        plugins=DDPPlugin(find_unused_parameters=True)
+        plugins=DDPPlugin()
     )
 
     try:
@@ -88,7 +89,7 @@ def main(cfg: DictConfig) -> None:
         trainer.test(ckpt_path=checkpoint_callback.best_model_path)
     except Exception as e:
         print(traceback.format_exc())
-        gmail_sender.send(body=f"<p>Error occurred in train.py.<br>{e}</p>")
+        gmail_sender.send(body=f"<p>Error occurred while training.<br>{e}</p>")
     finally:
         gmail_sender.send(body=f"train.py finished.")
 

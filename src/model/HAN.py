@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -13,15 +14,15 @@ class HierAttnNet(pl.LightningModule):
             self,
             optim,
             vocab_size: int,
-            word_hidden_dim: int = 32,
-            sent_hidden_dim: int = 32,
-            padding_idx: int = 1,
-            embedding_matrix=None,
-            num_class: int = 2,
-            weight_drop: float = 0.0,
-            embed_drop: float = 0.0,
-            locked_drop: float = 0.0,
-            last_drop: float = 0.0,
+            word_hidden_dim: int,
+            sent_hidden_dim: int,
+            padding_idx: int,
+            embedding_matrix,
+            num_class: int,
+            weight_drop: float,
+            embed_drop: float,
+            locked_drop: float,
+            last_drop: float,
     ):
         super(HierAttnNet, self).__init__()
         self.save_hyperparameters()
@@ -56,21 +57,16 @@ class HierAttnNet(pl.LightningModule):
 
         self.train_metrics = metrics.clone(prefix='train_')
         self.valid_metrics = metrics.clone(prefix='valid_')
+        self.test_metrics = metrics.clone(prefix='test_')
 
-        self.test_metrics = MetricCollection([
-            Accuracy(num_classes=2, average='macro'),
-            Precision(num_classes=2, average='macro'),
-            Recall(num_classes=2, average='macro'),
-            F1(num_classes=2, average='macro'),
-            ConfusionMatrix(num_classes=2)
-        ])
+        self.cm = ConfusionMatrix(num_classes=2, compute_on_step=False)
 
         # self.example_input_array = (torch.from_numpy(np.random.choice(vocab_size, (160, 150))), torch.tensor(0))
 
 
     def forward(self, X, y):
         x = X.permute(1, 0, 2) # X: (batch_size, doc_len, sent_len) -> x: (doc_len, bsz, sent_len)
-        word_h_n = torch.zeros(2, X.shape[0], self.hparams.word_hidden_dim)
+        word_h_n = torch.zeros(2, X.shape[0], self.hparams.word_hidden_dim, device=self.device)
         # word_h_n = nn.init.zeros_(torch.Tensor(2, X.shape[0], self.word_hidden_dim).to)
 
         #alpha and s Tensor List
@@ -89,12 +85,12 @@ class HierAttnNet(pl.LightningModule):
         doc_s = self.last_drop(doc_s)
         preds = self.fc(doc_s) # (bsz, class_num)
         loss = self.criterion(preds, y)
-        return loss, preds
+        return dict(loss=loss, preds=preds, word_attention=self.sent_a, sent_attenion=self.doc_a)
 
 
     def training_step(self, batch, batch_idx):
-        loss, preds = self(batch['nested_utters'], batch['labels'])
-        return {'loss': loss, 'batch_preds': preds, 'batch_labels': batch['labels']}
+        outputs = self(batch['nested_utters'], batch['labels'])
+        return {'loss': outputs['loss'], 'batch_preds': outputs['preds'], 'batch_labels': batch['labels']}
 
     def training_step_end(self, outputs):
         output = self.train_metrics(outputs['batch_preds'], outputs['batch_labels'])
@@ -108,8 +104,8 @@ class HierAttnNet(pl.LightningModule):
         self.log_dict(self.train_metrics.compute(), logger=True)
 
     def validation_step(self, batch, batch_idx):
-        loss, preds = self(batch['nested_utters'], batch['labels'])
-        return {'loss': loss, 'batch_preds': preds, 'batch_labels': batch['labels']}
+        outputs = self(batch['nested_utters'], batch['labels'])
+        return {'loss': outputs['loss'], 'batch_preds': outputs['preds'], 'batch_labels': batch['labels']}
 
     def validation_step_end(self, outputs):
         output = self.valid_metrics(outputs['batch_preds'], outputs['batch_labels'])
@@ -123,8 +119,8 @@ class HierAttnNet(pl.LightningModule):
         self.log_dict(self.valid_metrics.compute(), logger=True)
 
     def test_step(self, batch, batch_idx):
-        loss, preds = self(batch['nested_utters'], batch['labels'])
-        return {'loss': loss.detach(), 'batch_preds': preds.detach(), 'batch_labels': batch['labels']}
+        outputs = self(batch['nested_utters'], batch['labels'])
+        return {'loss': outputs['loss'], 'batch_preds': outputs['preds'], 'batch_labels': batch['labels']}
 
     def test_step_end(self, outputs):
         output = self.test_metrics(outputs['batch_preds'], outputs['batch_labels'])
@@ -135,7 +131,12 @@ class HierAttnNet(pl.LightningModule):
         labels = torch.cat([x['batch_labels'] for x in outputs])
         epoch_loss = self.criterion(preds, labels)
         self.log("test_loss", epoch_loss, logger=True)
-        self.log_dict(self.test_metrics.compute(), logger=True)
+        cm = self.cm.compute()
+        test_metrix = self.test_metrics.compute()
+        self.log("ConfusionMatrix", cm, logger=True)
+        self.log_dict(test_metrix, logger=True)
+        pd.DataFrame(cm.cpu().numpy()).to_csv(f'{self.logger.log_dir}/confusionmatrix.csv')
+        pd.DataFrame([metrix.cpu().numpy() for metrix in test_metrix.values()], index=test_metrix.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
 
     def configure_optimizers(self):
         return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
