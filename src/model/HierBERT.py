@@ -21,6 +21,7 @@ class HierchicalBERT(pl.LightningModule):
         sent_level_BERT_config: BertConfig,
         output_attentions: bool,
         use_ave_pooled_output: bool,
+        is_japanese: bool=True,
         # TODO: dropout率については、後で考える。
         ):
         super(HierchicalBERT, self).__init__()
@@ -32,6 +33,7 @@ class HierchicalBERT(pl.LightningModule):
         self.word_level_bert = BERTWordLevel(
             output_attentions=output_attentions,
             pretrained_model=pretrained_model,
+            is_japanese=is_japanese,
         )
 
         self.sent_level_bert = BERTSentLevel(
@@ -143,18 +145,21 @@ class HierchicalBERT(pl.LightningModule):
 class BERTWordLevel(pl.LightningModule):
     def __init__(self,
         output_attentions: bool,
-        pretrained_model: str = 'cl-tohoku/bert-large-japanese',
+        pretrained_model: str,
+        is_japanise: bool=True,
         ):
         super(BERTWordLevel, self).__init__()
         self.save_hyperparameters()
 
         self.bert = BertModel.from_pretrained(pretrained_model)
-        tokenizer = BertJapaneseTokenizer.from_pretrained(pretrained_model, additional_special_tokens=['<person>'])
-        self.bert.resize_token_embeddings(len(tokenizer))
-        # initialize <person> token by the average of some personal_pronouns's weights.
-        personal_pronouns = ['君', 'きみ', 'あなた' ,'彼', '彼女']
-        personal_pronouns_weights = torch.stack([self.bert.embeddings.word_embeddings.weight[i, :] for i in tokenizer.convert_tokens_to_ids(personal_pronouns)])
-        self.bert.embeddings.word_embeddings.weight.data[-1, :] = personal_pronouns_weights.mean(dim=0)
+        if is_japanise:
+            tokenizer = BertJapaneseTokenizer.from_pretrained(pretrained_model, additional_special_tokens=['<person>'])
+            self.bert.resize_token_embeddings(len(tokenizer))
+            # initialize <person> token by the average of some personal_pronouns's weights.
+            personal_pronouns = ['君', 'きみ', 'あなた' ,'彼', '彼女']
+            personal_pronouns_weights = torch.stack([self.bert.embeddings.word_embeddings.weight[i, :] for i in tokenizer.convert_tokens_to_ids(personal_pronouns)])
+            self.bert.embeddings.word_embeddings.weight.data[-1, :] = personal_pronouns_weights.mean(dim=0)
+
         # won't update word level bert layers
         for param in self.bert.parameters():
             param.requires_grad = False
