@@ -1,7 +1,7 @@
 name: HAN
 
 general:
-  _target_: project.model.HAN.HierAttnNet
+  _target_: src.model.HAN.HierAttnNet
   vocab_size: 32000
   weight_drop: 0.0
   locked_drop: 0.0
@@ -10,24 +10,17 @@ general:
   sent_hidden_dim: 512
   padding_idx: 1
   num_class: 2
-  #optim:
-  #  _target_: torch.optim.AdamW
-  #  lr: 1e-3
-  #  # betas: (0.9, 0.999)
-  #  # eps: 1e-8
-  #  weight_decay: 1e-2
-  #  # amsgrad: False
 
 data_module:
-  _target_: project.model.HANDataModule.CreateHANDataModule
+  _target_: src.model.HANDataModule.CreateHANDataModule
   batch_size: 32
 
 tokenizer:
-  _target_: project.tokenizer.tokenizer_HAN.HANtokenizer
+  _target_: src.tokenizer.tokenizer_HAN.HANtokenizer
   max_mor_num: 150
   max_utter_num: 160
   vocab_size: 32000
   min_freq: 1
   embed_dim: 200
   tokenizer: 'mecab-wordpiece'
-  cache_dir: ../../../../../project/tokenizer/
+  cache_dir: ../../../../../src/tokenizer/

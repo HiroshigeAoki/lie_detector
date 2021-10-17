@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import os
 import hydra
+from omegaconf import DictConfig
 
 class CreateDataset(Dataset):
     def __init__(self, df: pd.DataFrame, batch_size: int, tokenizer):
@@ -22,7 +23,7 @@ class CreateDataset(Dataset):
 
         input_ids, attention_mask, pad_sent_num = self.tokenizer.encode(nested_utters)
 
-        return dict(input_ids=input_ids, attention_mask=attention_mask, labels=torch.tensor(labels), pad_sent_num=torch.tensor(pad_sent_num))
+        return dict(input_ids=input_ids, attention_mask=attention_mask, labels=torch.tensor(labels), pad_sent_num=pad_sent_num)
 
 
 class CreateHierBertDataModule(pl.LightningDataModule):
@@ -32,7 +33,10 @@ class CreateHierBertDataModule(pl.LightningDataModule):
         self.valid_df = pd.read_pickle(data_dir + "valid.pkl")
         self.test_df = pd.read_pickle(data_dir + "test.pkl")
 
-        self.tokenizer = hydra.utils.instantiate(tokenizer)
+        if isinstance(tokenizer, DictConfig):
+            self.tokenizer = hydra.utils.instantiate(tokenizer)
+        else:
+            self.tokenizer = tokenizer
 
         self.n_cpus = os.cpu_count()
 

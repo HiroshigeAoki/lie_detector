@@ -4,8 +4,8 @@ from torchtext.vocab import Vectors
 import os, sys
 from transformers import BertJapaneseTokenizer
 sys.path.append(os.pardir)
-from project.preprocess.custom_mecab_tagger import CustomMeCabTagger
-from project.preprocess.custom_vocab_func import build_vocab_from_training_data
+from src.preprocess.custom_mecab_tagger import CustomMeCabTagger
+from src.preprocess.custom_vocab_func import build_vocab_from_training_data
 
 class HANtokenizer():
     def __init__(self, cache_dir: str, embed_dim: int, max_mor_num: int, max_utter_num: int, tokenizer: str, data_dir , **kwargs) -> None:
@@ -22,7 +22,7 @@ class HANtokenizer():
         if tokenizer == 'mecab-wordpiece':
             self.tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
         elif tokenizer == 'mecab':
-            self.tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/project/tokenizer/mecab_userdic/mecabrc")
+            self.tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc")
 
     def _mk_embedding_matrix(self) -> torch.tensor:
         sorted_stoi = dict(sorted(self.stoi.items(), key=lambda x: x[1]))

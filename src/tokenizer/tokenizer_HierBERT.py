@@ -4,6 +4,7 @@ import torch
 
 from transformers import BertJapaneseTokenizer
 
+
 class HierBertTokenizer():
     def __init__(
         self,
@@ -26,7 +27,7 @@ class HierBertTokenizer():
 
     def padding_sent_level(self, input_ids: list[list[int]], attention_mask: list[list[int]]) -> Tuple[list[list[int]], list[list[int]], int]:
         if len(input_ids) > self.doc_length:
-            return input_ids[:self.doc_length]
+            return input_ids[:self.doc_length], attention_mask[:self.doc_length], 0
         else:
             pad_sent_num = self.doc_length - len(input_ids)
             padding = [[0 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]

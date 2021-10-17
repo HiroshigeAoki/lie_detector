@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import traceback
 
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
@@ -7,7 +8,7 @@ from pytorch_lightning.plugins import DDPPlugin
 
 import hydra
 from omegaconf import OmegaConf, DictConfig
-from project.utils.gmail_send import Gmailsender
+from src.utils.gmail_send import Gmailsender
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,13 @@ def main(cfg: DictConfig) -> None:
         data_module = hydra.utils.instantiate(
             cfg.model.data_module,
             data_dir=cfg.data.dir,
+            tokenizer=cfg.model.tokenizer,
             _recursive_=False,
         )
 
         model = hydra.utils.instantiate(
-            cfg.model.general,
+            cfg.model.model,
+            sent_level_BERT_config=cfg.model.sent_level_BERT_config,
             optim=cfg.optim,
             _recursive_=False,
         )
@@ -84,7 +87,8 @@ def main(cfg: DictConfig) -> None:
         trainer.fit(model=model, datamodule=data_module)
         trainer.test(ckpt_path=checkpoint_callback.best_model_path)
     except Exception as e:
-        gmail_sender.send(body=f"error occurred in train.py.\n\n{type(e)}\n{e}")
+        print(traceback.format_exc())
+        gmail_sender.send(body=f"<p>Error occurred in train.py.<br>{e}</p>")
     finally:
         gmail_sender.send(body=f"train.py finished.")
 

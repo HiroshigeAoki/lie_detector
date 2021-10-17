@@ -5,7 +5,7 @@ from torchmetrics import Accuracy, MetricCollection, Precision, Recall, F1, Conf
 import pytorch_lightning as pl
 import hydra
 
-from project.model.regularize import embedded_dropout, WeightDrop, LockedDropout
+from src.model.regularize import embedded_dropout, WeightDrop, LockedDropout
 
 """hierarchical attention network"""
 class HierAttnNet(pl.LightningModule):
@@ -123,12 +123,11 @@ class HierAttnNet(pl.LightningModule):
         self.log_dict(self.valid_metrics.compute(), logger=True)
 
     def test_step(self, batch, batch_idx):
-        loss, preds = self(batch['nested_utters'], batch['labels']) # call forward()
+        loss, preds = self(batch['nested_utters'], batch['labels'])
         return {'loss': loss.detach(), 'batch_preds': preds.detach(), 'batch_labels': batch['labels']}
 
     def test_step_end(self, outputs):
         output = self.test_metrics(outputs['batch_preds'], outputs['batch_labels'])
-        self.cm(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
     def test_epoch_end(self, outputs):
@@ -139,10 +138,10 @@ class HierAttnNet(pl.LightningModule):
         self.log_dict(self.test_metrics.compute(), logger=True)
 
     def configure_optimizers(self):
-        return hydra.utils.instantiate(self.hparams.optim, params=self.parameters())
+        return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
 
-
-
+    def predict_step(self, batch, batch_idx):
+        return self(batch['nested_utters'], batch['labels'])
 
 class WordAttnNet(pl.LightningModule):
     def __init__(
@@ -172,7 +171,7 @@ class WordAttnNet(pl.LightningModule):
         self.rnn = nn.GRU(embed_dim, hidden_dim, bidirectional=True, batch_first=True)
         if weight_drop:
             self.rnn = WeightDrop(
-                self.rnn, ["weight_hh_l0", "weight_hh_l0_reverse"], dropout=weight_drop# , device=self.device #必要かも、、
+                self.rnn, ["weight_hh_l0", "weight_hh_l0_reverse"], dropout=weight_drop , device=self.device
             )
         self.word_atten = AttentionWithContext(hidden_dim * 2) # since GRU is bidirectional
 
@@ -186,7 +185,7 @@ class WordAttnNet(pl.LightningModule):
         :var h_n(return from GRU): tensor containing the hidden state for t=seq_len Like output
         :return:
         """
-        if self.embed_drop:
+        if self.hparams.embed_drop:
             embed = embedded_dropout(
                 self.word_embed, X.long(), dropout=self.hparams.embed_drop if self.training else 0,
             )
@@ -200,7 +199,6 @@ class WordAttnNet(pl.LightningModule):
         return a, s.unsqueeze(1), h_n
 
 
-# TODO: インターフェースをhierBERT.pyのsentlevelBERTと同じにする。
 class SentAttnNet(pl.LightningModule):
     def __init__(
             self,

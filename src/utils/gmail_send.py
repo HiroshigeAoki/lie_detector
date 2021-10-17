@@ -10,7 +10,7 @@ class Gmailsender():
         self.mail_to = mail_to
 
     def send(self, body):
-        with open('/home/haoki/Documents/vscode-workplaces/lie_detector/project/utils/config.yaml') as f:
+        with open('/home/haoki/Documents/vscode-workplaces/lie_detector/src/utils/config.yaml') as f:
             cfg = yaml.safe_load(f)
 
 
