@@ -5,16 +5,17 @@ model:
   _target_: src.model.HierBERT.HierchicalBERT
   use_ave_pooled_output: True
   output_attentions: True
+  is_japanese: True
 
 tokenizer:
   _target_: src.tokenizer.tokenizer_HierBERT.HierBertTokenizer
-  sent_length: 160
-  doc_length: 160
+  sent_length: 256
+  doc_length: 256
   pretrained_model: 'cl-tohoku/bert-large-japanese'
 
 data_module:
   _target_: src.model.HierBERTDataModule.CreateHierBertDataModule
-  batch_size: 32
+  batch_size: 64
 
 sent_level_BERT_config:
   _target_: transformers.BertConfig

@@ -4,6 +4,7 @@ hydra:
 
 experiment: baseline
 name: ${now:%Y-%m-%d_%H%M%S}
+message: 
 
 defaults:
   - model: HAN
@@ -16,13 +17,13 @@ defaults:
 # default flags are commented to avoid clustering the hyperparameters
 trainer:
   # accelerator: None
-  # accumulate_grad_batches: 1
+  accumulate_grad_batches: 1
   # amp_backend: native
   # amp_level: O2
   # auto_lr_find: False
   # auto_scale_batch_size: False
   # auto_select_gpus: False
-  benchmark: False
+  benchmark: True
   # check_val_every_n_epoch: 1
   # checkpoint_callback: True
   # default_root_dir:
@@ -70,6 +71,6 @@ early_stopping:
   _target_ : pytorch_lightning.callbacks.EarlyStopping
   monitor: 'val_loss'
   min_delta: 0.005
-  patience: 5
+  patience: 3
   mode: 'min'
   check_on_train_epoch_end: False

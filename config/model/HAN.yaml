@@ -14,12 +14,12 @@ general:
 
 data_module:
   _target_: src.model.HANDataModule.CreateHANDataModule
-  batch_size: 32
+  batch_size: 64
 
 tokenizer:
   _target_: src.tokenizer.tokenizer_HAN.HANtokenizer
-  sent_length: 160
-  doc_length: 160
+  sent_length: 256
+  doc_length: 256
   vocab_size: 32000
   min_freq: 1
   embed_dim: 200
