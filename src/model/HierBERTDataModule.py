@@ -40,7 +40,7 @@ class CreateHierBertDataModule(pl.LightningDataModule):
 
         self.n_cpus = os.cpu_count()
 
-        self.save_hyperparameters() # TODO: check Datamoduleでも使えるはず？、、
+        self.save_hyperparameters()
 
     def setup(self, stage: Optional[str] = None):
         # set train and valid dataset
@@ -48,7 +48,7 @@ class CreateHierBertDataModule(pl.LightningDataModule):
             self.train_ds = CreateDataset(self.train_df, self.hparams.batch_size, self.tokenizer)
             self.valid_ds = CreateDataset(self.valid_df, self.hparams.batch_size, self.tokenizer)
         # set test dataset
-        if stage == 'test' or stage is None:
+        if stage == 'test' or stage == 'predict' or stage is None:
             self.test_ds = CreateDataset(self.test_df, self.hparams.batch_size, self.tokenizer)
 
     def train_dataloader(self) -> DataLoader:
@@ -62,3 +62,6 @@ class CreateHierBertDataModule(pl.LightningDataModule):
     def test_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.test_ds, batch_size=self.hparams.batch_size,
                     shuffle=False, num_workers=self.n_cpus)
+
+    def predict_dataloader(self):
+        return self.test_dataloader()

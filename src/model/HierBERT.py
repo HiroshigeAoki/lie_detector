@@ -66,9 +66,6 @@ class HierchicalBERT(pl.LightningModule):
         input_ids = input_ids.permute(1,0,2)
         attention_mask = attention_mask.permute(1,0,2)
 
-        # gen_torch_tensor_shape_assertion('input_ids', input_ids, (self.hparams.sent_length, input_ids.shape[1], self.hparams.doc_length))
-        # gen_torch_tensor_shape_assertion('attention_mask', attention_mask, (self.hparams.sent_length, input_ids.shape[1], self.hparams.doc_length))
-
         last_hidden_state_word_level, pooled_output_word_level, word_attentions = [], [], []
         for _input_ids, _attention_mask in zip(input_ids, attention_mask):
             outputs = self.word_level_bert(input_ids=_input_ids, attention_mask=_attention_mask)
@@ -76,6 +73,7 @@ class HierchicalBERT(pl.LightningModule):
             pooled_output_word_level.append(outputs['pooled_output'])
             if self.hparams.output_attentions:
                 word_attentions.append(outputs['attentions'])
+
         inputs_embeds = torch.stack(pooled_output_word_level).permute(1, 0, 2)
         outputs = self.sent_level_bert(inputs_embeds=inputs_embeds, pad_sent_num=pad_sent_num)
         loss, logits = self.classifier(outputs['pooled_output'], labels)
@@ -84,7 +82,6 @@ class HierchicalBERT(pl.LightningModule):
         return dict(loss=loss, logits=logits, word_attentions=word_attentions, sent_attentions=sent_attentions)
 
     def training_step(self, batch, batch_idx):
-        # loss, logits, attentions = self(batch['input_ids'], batch['attention_mask'], batch['labels'])
         outputs = self(**batch)
         return {'loss': outputs['loss'], 'batch_preds': outputs['logits'], 'batch_labels': batch['labels']}
 
@@ -136,7 +133,8 @@ class HierchicalBERT(pl.LightningModule):
         pd.DataFrame([metrix.cpu().numpy() for metrix in test_metrix.values()], index=test_metrix.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
 
     def predict_step(self, batch, batch_idx: int):
-        return self(**batch)
+        outputs = self(**batch)
+        return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
 
     def configure_optimizers(self):
         return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
@@ -146,13 +144,13 @@ class BERTWordLevel(pl.LightningModule):
     def __init__(self,
         output_attentions: bool,
         pretrained_model: str,
-        is_japanise: bool=True,
+        is_japanese: bool=True,
         ):
         super(BERTWordLevel, self).__init__()
         self.save_hyperparameters()
 
         self.bert = BertModel.from_pretrained(pretrained_model)
-        if is_japanise:
+        if is_japanese:
             tokenizer = BertJapaneseTokenizer.from_pretrained(pretrained_model, additional_special_tokens=['<person>'])
             self.bert.resize_token_embeddings(len(tokenizer))
             # initialize <person> token by the average of some personal_pronouns's weights.
@@ -166,8 +164,6 @@ class BERTWordLevel(pl.LightningModule):
 
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
-        # gen_torch_tensor_shape_assertion(input_ids, input_ids.shape, (input_ids.shape[0], self.bert.config.hidden_size))
-        # gen_torch_tensor_shape_assertion('attention_mask', attention_mask, (input_ids.shape[0], self.bert.config.hidden_size))
         last_hidden_state, pooled_output, attentions = self.bert(input_ids, attention_mask, output_attentions=self.hparams.output_attentions).values()
         return dict(last_hidden_state=last_hidden_state, pooled_output=pooled_output, attentions=average_attention(attentions))
 
@@ -185,7 +181,6 @@ class BERTSentLevel(pl.LightningModule):
 
     def forward(self, inputs_embeds: torch.FloatTensor,  pad_sent_num: torch.tensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         # TODO: 諸々決まったら、返り値型・数宣言の変更をする。
-        # gen_torch_tensor_shape_assertion('inputs_embeds', inputs_embeds, (inputs_embeds.shape[0], self.hparams.doc_length, self.bert.config.hidden_size))
         attention_mask = torch.ones(inputs_embeds.shape[0], inputs_embeds.shape[1])
         # apply masks to pad sentences.
         for i, num in enumerate(pad_sent_num):
@@ -195,13 +190,11 @@ class BERTSentLevel(pl.LightningModule):
         last_hidden_state, pooled_output, attentions = self.bert(inputs_embeds=inputs_embeds, attention_mask=attention_mask.to(self.device), output_attentions=self.hparams.output_attentions).values()
         if self.hparams.use_ave_pooled_output:
             pooled_output = last_hidden_state.mean(dim=1)
-        # gen_torch_tensor_shape_assertion('pooled_output', pooled_output, (inputs_embeds.shape[0], self.bert.config.hidden_size))
-        # gen_torch_tensor_shape_assertion('attention', attentions, Tuple[inputs_embeds.shape[0], self.hparams.num_head, self.hparams.doc_length, self.hparams.doc_length])
         return dict(pooled_output=pooled_output, attentions=average_attention(attentions))
 
 
 class Classifier(BertPreTrainedModel):
-    def __init__(self,num_labels, config):
+    def __init__(self, num_labels, config):
         super().__init__(config)
         self.num_labels = num_labels
         self.config = config
