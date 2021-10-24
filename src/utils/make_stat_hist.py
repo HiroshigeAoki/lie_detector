@@ -1,4 +1,5 @@
 import pandas as pd
+from pandarallel import pandarallel
 from transformers import BertJapaneseTokenizer
 import os, sys
 sys.path.append(os.pardir)
@@ -27,8 +28,9 @@ def main():
 
     tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v2', additional_special_tokens=['<person>'])
     all_utter = pd.concat((train.loc[:,"nested_utters"], valid.loc[:,"nested_utters"], test.loc[:,"nested_utters"]), axis=0, ignore_index=True)
-    subword_count = all_utter.apply(count_subword, tokenizer=tokenizer)
-    fig_mor = subword_count.hist(bins=200, grid=True, xrot=20, xlabelsize=16, ylabelsize=16).set_xticks(ticks=list(range(0,150,2)))
+    pandarallel.initialize()
+    subword_count = all_utter.parallel_apply(count_subword, tokenizer=tokenizer)
+    fig_mor = subword_count.hist(bins=80, grid=True , xlabelsize=8, ylabelsize=8) #.set_xticks(ticks=list(range(0,180,100)))
     fig_mor[0].figure.savefig("../../data/nested/num_sub_hist.png")
     sender.send("histogram作成終了。")
 
