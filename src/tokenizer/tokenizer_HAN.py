@@ -8,20 +8,21 @@ from src.preprocess.custom_mecab_tagger import CustomMeCabTagger
 from src.preprocess.custom_vocab_func import build_vocab_from_training_data
 
 class HANtokenizer():
-    def __init__(self, cache_dir: str, embed_dim: int, sent_length: int, doc_length: int, tokenizer: str, data_dir , **kwargs) -> None:
+    def __init__(self, cache_dir: str, embed_dim: int, sent_length: int, doc_length: int, tokenizer_type: str, data_dir , **kwargs) -> None:
         self.sent_length = sent_length
         self.doc_length = doc_length
         self.specials = ['<unk>', '<PAD>', '<BOS>', '<EOS>']
         kwargs['specials'] = self.specials
         self.embed_dim = embed_dim
-        self.vocab = build_vocab_from_training_data(data_dir, tokenizer, **kwargs)
-        self.vectors = Vectors(name='model_fasttext.vec', cache=cache_dir +  f"{tokenizer}_vectors/dim_{self.embed_dim}")
+        self.vocab = build_vocab_from_training_data(data_dir, tokenizer_type, **kwargs)
+        self.vectors = Vectors(name='model_fasttext.vec', cache=cache_dir +  f"{tokenizer_type}_vectors/dim_{self.embed_dim}")
         self.stoi = self.vocab.get_stoi()
         self.embedding_matrix = self._mk_embedding_matrix()
+        self.tokenizer_type = tokenizer_type
 
-        if tokenizer == 'mecab-wordpiece':
+        if self.tokenizer_type == 'mecab-wordpiece':
             self.tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
-        elif tokenizer == 'mecab':
+        elif self.tokenizer_type == 'mecab':
             self.tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc")
 
     def _mk_embedding_matrix(self) -> torch.tensor:
