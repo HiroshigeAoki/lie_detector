@@ -49,7 +49,7 @@ class CreateHANDataModule(pl.LightningDataModule):
             self.train_ds = CreateHANDataset(self.train_df, self.batch_size, self.tokenizer)
             self.valid_ds = CreateHANDataset(self.valid_df, self.batch_size, self.tokenizer)
         # set test dataset
-        if stage == 'test' or stage is None:
+        if stage == 'test' or stage == 'predict' or stage is None:
             self.test_ds = CreateHANDataset(self.test_df, self.batch_size, self.tokenizer)
 
     def train_dataloader(self) -> DataLoader:
@@ -63,3 +63,6 @@ class CreateHANDataModule(pl.LightningDataModule):
     def test_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.test_ds, batch_size=self.batch_size,
                     shuffle=False, num_workers=self.n_cpus)
+
+    def predict_dataloader(self):
+        return self.test_dataloader()
