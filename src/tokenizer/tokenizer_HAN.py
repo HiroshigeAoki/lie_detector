@@ -1,3 +1,5 @@
+from typing import List
+
 import pandas as pd
 import torch
 from torchtext.vocab import Vectors
@@ -61,3 +63,6 @@ class HANtokenizer():
         nested_utter_padded_word = nested_utters_df_padded_word.to_list()
         padded_nested_utters = self.padding_sent_level(nested_utter_padded_word)
         return torch.tensor(padded_nested_utters)
+
+    def batch_decode(self, indices: List[int]) -> List[str]:
+        return self.vocab.lookup_tokens(indices)
