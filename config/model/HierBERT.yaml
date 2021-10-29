@@ -14,7 +14,7 @@ tokenizer:
   pretrained_model: 'cl-tohoku/bert-large-japanese'
 
 data_module:
-  _target_: src.model.HierBERTDataModule.CreateHierBertDataModule
+  _target_: src.datamodule.HierBERTDataModule.CreateHierBertDataModule
   batch_size: 64
 
 sent_level_BERT_config:

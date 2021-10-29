@@ -1,6 +1,6 @@
 name: HAN
 
-general:
+model:
   _target_: src.model.HAN.HierAttnNet
   vocab_size: 32000
   weight_drop: 0.0
@@ -13,7 +13,7 @@ general:
   num_class: 2
 
 data_module:
-  _target_: src.model.HANDataModule.CreateHANDataModule
+  _target_: src.datamodule.HANDataModule.CreateHANDataModule
   batch_size: 64
 
 tokenizer:

@@ -52,7 +52,7 @@ def main(cfg: DictConfig) -> None:
             )
 
             model = hydra.utils.instantiate(
-                cfg.model.general,
+                cfg.model.model,
                 optim=cfg.optim,
                 embedding_matrix=tokenizer.embedding_matrix,
                 _recursive_=False,
