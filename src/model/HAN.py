@@ -1,9 +1,11 @@
 import pandas as pd
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torchmetrics import Accuracy, MetricCollection, Precision, Recall, F1, ConfusionMatrix
 import pytorch_lightning as pl
+from sklearn.metrics import precision_recall_fscore_support
 import hydra
 
 from src.model.regularize import embedded_dropout, WeightDrop, LockedDropout
@@ -85,8 +87,7 @@ class HierAttnNet(pl.LightningModule):
         doc_s = self.last_drop(doc_s)
         preds = self.fc(doc_s) # (bsz, class_num)
         loss = self.criterion(preds, y)
-        return dict(loss=loss, preds=preds, word_attention=self.sent_a, sent_attenion=self.doc_a)
-
+        return dict(loss=loss, preds=preds, word_attentions=self.sent_a, sent_attentions=self.doc_a)
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch['nested_utters'], batch['labels'])
@@ -124,25 +125,57 @@ class HierAttnNet(pl.LightningModule):
 
     def test_step_end(self, outputs):
         output = self.test_metrics(outputs['batch_preds'], outputs['batch_labels'])
+        self.cm(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
+    """
+    def test_epoch_end(self, outputs):
+        logits = torch.cat([x['batch_preds'] for x in outputs])
+        labels = torch.cat([x['batch_labels'] for x in outputs])
+        epoch_loss = self.criterion(logits, labels)
+        num_correct = (logits.argmax(dim=1) == labels).sum().item()
+        epoch_accuracy = num_correct / len(labels)
+        self.print(f"test_accuracy:{epoch_accuracy}")
+        #cm = ConfusionMatrix(num_classes=2)
+        #df_cm = pd.DataFrame(cm(logits.argmax(dim=1).cpu(), labels.cpu()).numpy())
+        df_cm = pd.DataFrame(self.cm.compute())
+        self.print(f"confusion_matrix\n{df_cm.to_string()}\n")
+        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), logits.argmax(dim=1).cpu())).T,
+                                    columns=["precision", "recall", "f1", "support"],
+                                )
+        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
+        self.log_dict(self.test_metrics.compute())
+        #self.log_dict(self.test_metrics(logits.argmax(dim=1), labels))
+    """
+
 
     def test_epoch_end(self, outputs):
         preds = torch.cat([x['batch_preds'] for x in outputs])
         labels = torch.cat([x['batch_labels'] for x in outputs])
         epoch_loss = self.criterion(preds, labels)
         self.log("test_loss", epoch_loss, logger=True)
-        cm = self.cm.compute()
+        cm = pd.DataFrame(self.cm.compute())
         test_metrix = self.test_metrics.compute()
-        self.log("ConfusionMatrix", cm, logger=True)
         self.log_dict(test_metrix, logger=True)
-        pd.DataFrame(cm.cpu().numpy()).to_csv(f'{self.logger.log_dir}/confusionmatrix.csv')
+        cm.to_csv(f'{self.logger.log_dir}/confusionmatrix.csv')
         pd.DataFrame([metrix.cpu().numpy() for metrix in test_metrix.values()], index=test_metrix.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
+        # For debug
+        num_correct = (preds.argmax(dim=1) == labels).sum().item()
+        epoch_accuracy = num_correct / len(labels)
+        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), preds.argmax(dim=1).cpu())).T,
+                                    columns=["precision", "recall", "f1", "support"],
+                                )
+        scores_df.to_csv(f'{self.logger.log_dir}/precision_recall_fscore_support.csv')
+        self.print(f"test_accuracy:{epoch_accuracy}")
+        self.print(f"confusion_matrix\n{cm.to_string()}\n")
+        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
+
 
     def configure_optimizers(self):
         return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
 
     def predict_step(self, batch, batch_idx):
-        return self(batch['nested_utters'], batch['labels'])
+        outputs = self(batch['nested_utters'], batch['labels'])
+        return dict(input_ids=batch['nested_utters'], labels=batch['labels'], loss=outputs['loss'], logits=outputs['preds'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'])
 
 class WordAttnNet(pl.LightningModule):
     def __init__(
@@ -245,6 +278,7 @@ class AttentionWithContext(pl.LightningModule):
         Returns:
             [type]: [description]
         """
+        # TODO: padをマスクして、attentionが掛からないようにするべき。
         u = torch.tanh_(self.atten(h_t)) #inp: the output of the word-GRU as same as HAN's paper
         a = F.softmax(self.contx(u), dim=1)
         s = (a * h_t).sum(1)
