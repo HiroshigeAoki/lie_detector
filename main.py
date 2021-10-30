@@ -11,7 +11,9 @@ from omegaconf import OmegaConf, DictConfig
 
 from src.visualization.plot_attention import plot_attentions
 import os
+import joblib
 
+from tqdm import tqdm
 from src.utils.gmail_send import Gmailsender
 
 logger = logging.getLogger(__name__)
@@ -20,14 +22,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-class InputMonitor(pl.Callback):
-
-    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx, dataloader_idx):
-        if (batch_idx + 1) % trainer.log_every_n_steps == 0:
-            x, y = batch
-            logger = trainer.logger
-            logger.experiment.add_histogram("input", x, global_step=trainer.global_step)
-            logger.experiment.add_histogram("target", y, global_step=trainer.global_step)
 
 
 @hydra.main(config_path="config", config_name="defaults")
@@ -94,7 +88,7 @@ def main(cfg: DictConfig) -> None:
 
         trainer = pl.Trainer(
             **OmegaConf.to_container(cfg.trainer),
-            callbacks=[checkpoint_callback, early_stop_callback, InputMonitor()],
+            callbacks=[checkpoint_callback, early_stop_callback],
             logger=tb_logger,
             plugins=DDPPlugin()
         )
@@ -110,33 +104,17 @@ def main(cfg: DictConfig) -> None:
             trainer.test(model=test_model, datamodule=data_module)
 
         elif cfg.mode == 'plot_attention':
+            #ckpt_path = f'/disk/ssd14tb/haoki/Documents/vscode-workplaces/lie_detector/outputs/wereWolf/HAN/baseline/{cfg.name}/checkpoints/epoch={cfg.best_epoch}.ckpt'
             ckpt_path = f'checkpoints/epoch={cfg.best_epoch}.ckpt'
             predict_model = model.load_from_checkpoint(ckpt_path)
             outputs = trainer.predict(model=predict_model, datamodule=data_module)
             if cfg.model.name == 'HAN':
-                #ckpt_path = f'/disk/ssd14tb/haoki/Documents/vscode-workplaces/lie_detector/outputs/wereWolf/HAN/baseline/{cfg.name}/checkpoints/epoch={cfg.best_epoch}.ckpt'
-                logits = torch.cat([p['logits'] for p in outputs], dim=0).cpu()
+                logits = torch.cat([p['logits'] for p in outputs], dim=0)
                 word_attentions = torch.cat([p['word_attentions'] for p in outputs]).cpu()
                 sent_attentions = torch.cat([p['sent_attentions'].squeeze(2) for p in outputs]).cpu()
                 input_ids = torch.cat([p['input_ids'] for p in outputs]).cpu()
                 labels = torch.cat([p['labels'] for p in outputs]).cpu()
                 ignore_tokens = ['<PAD>', '<unk>']
-
-            ploted_doc = []
-            for _input_ids, _word_attentions, _sent_attentions in zip(input_ids, word_attentions, sent_attentions):
-                doc = [list(map(lambda x: x.replace(' ', ''), tokenizer.batch_decode(ids.tolist()))) for ids in _input_ids]
-                ploted_doc.append(
-                    plot_attentions(
-                        doc=doc, word_weights=_word_attentions, sent_weights=_sent_attentions,
-                        threshold=0.01, word_cmap="Blues" , sent_cmap="Reds",
-                        word_color_level=5, sent_color_level=40, size=3,
-                        ignore_tokens=ignore_tokens
-                    )
-                )
-
-            softmax = torch.nn.Softmax(dim=1)
-            probs = softmax(logits)
-            preds = logits.argmax(dim=1)
 
             # label 1: deceptive role, label 0: deceived role
             os.makedirs('ploted_attention/TP', exist_ok=True) # preds: 1, label: 1
@@ -144,20 +122,39 @@ def main(cfg: DictConfig) -> None:
             os.makedirs('ploted_attention/FP', exist_ok=True) # preds: 1, label: 0
             os.makedirs('ploted_attention/FN', exist_ok=True) # preds: 0, label: 1
 
-            for i, e in enumerate(zip(ploted_doc, probs, preds, labels)):
-                _ploted_doc, prob, pred, label = e
+            kwargs = dict(
+                threshold=0.01, word_cmap="Blues" , sent_cmap="Reds",
+                word_color_level=4, sent_color_level=35, size=3,
+                ignore_tokens=ignore_tokens
+            )
+
+            softmax = torch.nn.Softmax(dim=1)
+            probs = softmax(logits).cpu()
+            preds = logits.argmax(dim=1).cpu()
+
+            def make_ploted_doc(i, input_ids, word_weights,  sent_weights ,prob, pred, label, kwargs):
+                doc = [list(map(lambda x: x.replace(' ', ''), tokenizer.batch_decode(ids.tolist()))) for ids in input_ids]
+                ploted_doc = plot_attentions(doc=doc, word_weights=word_weights, sent_weights=sent_weights, **kwargs)
                 if pred == label:
                     if label == 1:
-                        save_path = f'TP/No:{i} conviction degree:{prob[1]}.html'
+                        save_path = f'ploted_attention/TP/DC:{prob[1] * 100:.2f}% No.{i}.html' # DV stands for Degree of Conviction
                     elif label == 0:
-                        save_path = f'TN/No:{i} conviction degree:{prob[0]}.html'
+                        save_path = f'ploted_attention/TN/DC:{prob[0] * 100:.2f}% No.{i}.html'
                 elif pred != label:
                     if label == 1:
-                        save_path = f'FP/No:{i} conviction degree:{prob[1]}.html'
+                        save_path = f'ploted_attention/FP/DC:{prob[1] * 100:.2f}% No.{i}.html'
                     elif label == 0:
-                        save_path = f'FN/No:{i} conviction degree:{prob[0]}.html'
+                        save_path = f'ploted_attention/FN/DC:{prob[0] * 100:.2f}% No.{i}.html'
                 with open(save_path, 'w') as f:
-                    f.write(_ploted_doc)
+                    f.write(ploted_doc)
+
+            joblib.Parallel(n_jobs=os.cpu_count())(
+                joblib.delayed(make_ploted_doc)(
+                    i,
+                    *args,
+                    kwargs=kwargs,
+                ) for i, args in tqdm(enumerate(zip(input_ids, word_attentions, sent_attentions, probs, preds, labels)), desc='making ploted doc')
+            )
 
         else:
             raise Exception(f'Mode:{cfg.mode} is invalid.')
@@ -167,7 +164,7 @@ def main(cfg: DictConfig) -> None:
         gmail_sender.send(body=f"<p>Error occurred while training.<br>{e}</p>")
 
     finally:
-        gmail_sender.send(body=f"train.py finished.")
+        gmail_sender.send(body=f"{cfg.mode} was finished.")
 
 if __name__ == "__main__":
     main()

@@ -2,8 +2,6 @@ import matplotlib
 import matplotlib.cm
 import matplotlib.colors
 import torch
-from tqdm import tqdm
-from transformers.models.bert_japanese import tokenization_bert_japanese
 
 # colormaps: https://matplotlib.org/stable/tutorials/colors/colormaps.html
 def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weights: list[torch.tensor],
@@ -17,9 +15,9 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
     template_sent = '<font face="monospace" \nsize="{}"; span class="barcode"; style="color: black; background-color: {}">{}</span></font>'
 
     for sent, _word_weights, sent_weight in zip(doc, word_weights, sent_weights):
-        sent_color = matplotlib.colors.rgb2hex(sent_cmap(sent_weight.numpy() * sent_color_level)[:3]) if not sent_weight.numpy() < threshold else "#FFFFFF"
         if sent[0] == pad_token:
-            continue
+            break
+        sent_color = matplotlib.colors.rgb2hex(sent_cmap(sent_weight.numpy() * sent_color_level)[:3]) if not sent_weight.numpy() < threshold else "#FFFFFF"
         colored_doc += template_sent.format(size, sent_color, "&nbsp" + ' ' + "&nbsp")
         for token, word_weight in zip(sent, _word_weights):
             if token in ignore_tokens:
