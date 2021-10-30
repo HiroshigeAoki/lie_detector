@@ -78,3 +78,13 @@ early_stopping:
   patience: 3
   mode: 'min'
   check_on_train_epoch_end: False
+
+checkpoint_callback:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  #dirpath=checkpoints_dir
+  filename: '{epoch}'
+  monitor: 'val_loss'
+  verbose: True
+  # save_last: None
+  save_top_k: 1
+  mode: 'min'

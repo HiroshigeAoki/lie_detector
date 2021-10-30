@@ -12,16 +12,11 @@ from omegaconf import OmegaConf, DictConfig
 from src.visualization.plot_attention import plot_attentions
 import os
 import joblib
-
 from tqdm import tqdm
+
 from src.utils.gmail_send import Gmailsender
 
 logger = logging.getLogger(__name__)
-
-import warnings
-warnings.filterwarnings("ignore")
-
-
 
 
 @hydra.main(config_path="config", config_name="defaults")
@@ -76,12 +71,7 @@ def main(cfg: DictConfig) -> None:
         )
 
         checkpoint_callback = pl.callbacks.ModelCheckpoint(
-            #dirpath=checkpoints_dir,
-            filename='{epoch}',
-            verbose=True,
-            monitor='val_loss',
-            mode='min',
-            save_top_k=1
+            cfg.checkpoint_callback,
         )
 
         tb_logger = pl_loggers.TensorBoardLogger(".", "", "", log_graph=True, default_hp_metric=False)
@@ -137,14 +127,14 @@ def main(cfg: DictConfig) -> None:
                 ploted_doc = plot_attentions(doc=doc, word_weights=word_weights, sent_weights=sent_weights, **kwargs)
                 if pred == label:
                     if label == 1:
-                        save_path = f'ploted_attention/TP/DC:{prob[1] * 100:.2f}% No.{i}.html' # DV stands for Degree of Conviction
+                        save_path = f'ploted_attention/TP/DC:{prob[label] * 100:.2f}% No.{i}.html' # DV stands for Degree of Conviction
                     elif label == 0:
-                        save_path = f'ploted_attention/TN/DC:{prob[0] * 100:.2f}% No.{i}.html'
+                        save_path = f'ploted_attention/TN/DC:{prob[label] * 100:.2f}% No.{i}.html'
                 elif pred != label:
                     if label == 1:
-                        save_path = f'ploted_attention/FP/DC:{prob[1] * 100:.2f}% No.{i}.html'
+                        save_path = f'ploted_attention/FP/DC:{prob[label] * 100:.2f}% No.{i}.html'
                     elif label == 0:
-                        save_path = f'ploted_attention/FN/DC:{prob[0] * 100:.2f}% No.{i}.html'
+                        save_path = f'ploted_attention/FN/DC:{prob[label] * 100:.2f}% No.{i}.html'
                 with open(save_path, 'w') as f:
                     f.write(ploted_doc)
 
