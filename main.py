@@ -70,7 +70,7 @@ def main(cfg: DictConfig) -> None:
             cfg.early_stopping,
         )
 
-        checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        checkpoint_callback = hydra.utils.instantiate(
             cfg.checkpoint_callback,
         )
 
@@ -105,18 +105,13 @@ def main(cfg: DictConfig) -> None:
                 input_ids = torch.cat([p['input_ids'] for p in outputs]).cpu()
                 labels = torch.cat([p['labels'] for p in outputs]).cpu()
                 ignore_tokens = ['<PAD>', '<unk>']
+                pad_token = '<PAD>'
 
             # label 1: deceptive role, label 0: deceived role
             os.makedirs('ploted_attention/TP', exist_ok=True) # preds: 1, label: 1
             os.makedirs('ploted_attention/TN', exist_ok=True) # preds: 0, label: 0
             os.makedirs('ploted_attention/FP', exist_ok=True) # preds: 1, label: 0
             os.makedirs('ploted_attention/FN', exist_ok=True) # preds: 0, label: 1
-
-            kwargs = dict(
-                threshold=0.01, word_cmap="Blues" , sent_cmap="Reds",
-                word_color_level=4, sent_color_level=35, size=3,
-                ignore_tokens=ignore_tokens
-            )
 
             softmax = torch.nn.Softmax(dim=1)
             probs = softmax(logits).cpu()
@@ -125,26 +120,45 @@ def main(cfg: DictConfig) -> None:
             def make_ploted_doc(i, input_ids, word_weights,  sent_weights ,prob, pred, label, kwargs):
                 doc = [list(map(lambda x: x.replace(' ', ''), tokenizer.batch_decode(ids.tolist()))) for ids in input_ids]
                 ploted_doc = plot_attentions(doc=doc, word_weights=word_weights, sent_weights=sent_weights, **kwargs)
+                table_of_contents = dict(TP=[], TN=[], FP=[], FN=[])
                 if pred == label:
                     if label == 1:
                         save_path = f'ploted_attention/TP/DC:{prob[label] * 100:.2f}% No.{i}.html' # DV stands for Degree of Conviction
+                        table_of_contents['TP'].append(save_path.replace('ploted_attention/', './'))
                     elif label == 0:
                         save_path = f'ploted_attention/TN/DC:{prob[label] * 100:.2f}% No.{i}.html'
+                        table_of_contents['TN'].append(save_path.replace('ploted_attention/', './'))
                 elif pred != label:
                     if label == 1:
-                        save_path = f'ploted_attention/FP/DC:{prob[label] * 100:.2f}% No.{i}.html'
+                        save_path = f'ploted_attention/FP/DC:{prob[pred] * 100:.2f}% No.{i}.html'
+                        table_of_contents['FP'].append(save_path.replace('ploted_attention/', './'))
                     elif label == 0:
-                        save_path = f'ploted_attention/FN/DC:{prob[label] * 100:.2f}% No.{i}.html'
+                        save_path = f'ploted_attention/FN/DC:{prob[pred] * 100:.2f}% No.{i}.html'
+                        table_of_contents['FN'].append(save_path.replace('ploted_attention/', './'))
                 with open(save_path, 'w') as f:
                     f.write(ploted_doc)
+                return table_of_contents
 
-            joblib.Parallel(n_jobs=os.cpu_count())(
+            list_args = [(i, *args) for i, args in enumerate(zip(input_ids, word_attentions, sent_attentions, probs, preds, labels))]
+
+            kwargs = dict(
+                threshold=0.01, word_cmap="Blues" , sent_cmap="Reds",
+                word_color_level=4, sent_color_level=35, size=3,
+                ignore_tokens=ignore_tokens,
+                pad_token=pad_token,
+            )
+
+            # TODO: indexのページを作成する。
+            table_of_contents = joblib.Parallel(n_jobs=-1)(
                 joblib.delayed(make_ploted_doc)(
-                    i,
                     *args,
                     kwargs=kwargs,
-                ) for i, args in tqdm(enumerate(zip(input_ids, word_attentions, sent_attentions, probs, preds, labels)), desc='making ploted doc')
+                ) for args in tqdm(list_args, desc='making ploted doc')
             )
+
+            file = '<td><a href="{}">{}</a></td>'
+            with open('ploted_attention/index.html', 'w') as f:
+                f.write()
 
         else:
             raise Exception(f'Mode:{cfg.mode} is invalid.')
@@ -155,6 +169,7 @@ def main(cfg: DictConfig) -> None:
 
     finally:
         gmail_sender.send(body=f"{cfg.mode} was finished.")
+
 
 if __name__ == "__main__":
     main()
