@@ -1,6 +1,6 @@
 name: HierBERT
 
-model:
+config:
   num_labels: 2
   _target_: src.model.HierBERT.HierchicalBERT
   use_ave_pooled_output: True

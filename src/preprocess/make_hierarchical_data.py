@@ -14,16 +14,18 @@ from utils.gmail_send import Gmailsender
 from preprocess.custom_mecab_tagger import CustomMeCabTagger
 
 
-def extract(filePaths, save_dir, ROLES_USED):
+def extract(filePaths, save_dir, kwargs):
     """ファイルから必要なところを取り出してリストにまとめます"""
     nested_utterances = []
     labels = []
+    deleted = []
 
     with trange(len(filePaths), desc="extracting... ") as t:
         for _, filePath in zip(t, filePaths):
-            _nested_utterances, _labels = extract_loop(filePath, ROLES_USED)
+            _nested_utterances, _labels, _deleted = extract_loop(filePath, kwargs)
             nested_utterances += _nested_utterances
             labels += _labels
+            deleted += _deleted
 
     print("split data into train, valid and test")
     X_train, X_valid_test, y_train, y_valid_test = train_test_split(
@@ -34,7 +36,16 @@ def extract(filePaths, save_dir, ROLES_USED):
         X_valid_test, y_valid_test, test_size=.5, stratify=y_valid_test, random_state=0
     )
 
-    tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/project/tokenizer/mecab_userdic/mecabrc")
+    train_for_tapt = []
+    for train in X_train:
+        train_for_tapt.extend(train)
+        train_for_tapt.append("")
+
+    with open(f'{save_dir}/bbs.txt', 'w') as f: # for tapt pretraining of RoBERTa.
+        for utterance in tqdm(train_for_tapt + deleted, desc="making bbs.txt"):
+            f.write(utterance + '\n')
+
+    tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc")
     make_split_train(save_dir, X_train, tokenizer, file_name='split-train-mecab.txt') # mecab version
 
     tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
@@ -57,13 +68,11 @@ def extract(filePaths, save_dir, ROLES_USED):
         with open(f'{save_dir}/{type}.pkl', 'wb') as f:
             pickle.dump(df,  f, protocol=5)
 
-def extract_loop(filePath, ROLES_USED):
-    labels = []
-    nested_utterances = [] #(user_num, utterance_num)
+
+def extract_loop(filePath, kwargs):
+    deleted = []
+    delete_nested_utterances = []
     participants = {}
-    roles_label = {"人狼": 1, "狂人": 1, "村人": 0, "占い師": 0, "霊能者": 0, "狩人": 0, "共有者": 0, "ハムスター人間": 0}
-    min_len_char = 10
-    min_num_utter = 10
 
     with open(filePath, encoding='utf-8') as f:
         data = json.load(f)
@@ -72,35 +81,53 @@ def extract_loop(filePath, ROLES_USED):
 
     """processing each day"""
     days = data['days'][1:-1] # exclude prologue and epilogue
+    epilogue = data['days'][0]
+    prologue = data['days'][-1]
 
+    nested_utterances, labels, _deleted = preprocess(days=days, participants=participants, **kwargs)
+    deleted.extend(_deleted)
+    _delete_nested_utterances, _, _deleted = preprocess(days=[epilogue, prologue], participants=participants, **kwargs)
+    for utterances in _delete_nested_utterances:
+        delete_nested_utterances.extend(utterances)
+        delete_nested_utterances.append("")
+    deleted.extend(delete_nested_utterances + deleted)
+
+    return nested_utterances, labels, deleted
+
+
+def preprocess(days, participants, role2label , used_role, min_len_char, min_num_utter):
+    nested_utterances = [] #(user_num, utterance_num)
+    labels = []
+    deleted = []
     """Aggregate all utterances of each player, respectively."""
     for participant in participants.keys():
         if participant == '楽天家 ゲルト': # exclude a bot player.
             continue
         participant_role = participants[participant]
-        if participant_role not in ROLES_USED:
+        if participant_role not in used_role:
             continue
         _nested_utterance = []
-        for day in days:
-            for _utterance in day['utterances']:
-                if _utterance.get('subject') == participant and _utterance.get('u_type') == 'say':
-                    _utterance = clean_sent(_utterance['utterance'])
-                    _utterance = replace_term(_utterance)
-
-                    if len(_utterance) <= min_len_char:
+        _deleted = []
+        for i, day in enumerate(days):
+            for utterance_inf in day['utterances']:
+                if utterance_inf.get('subject') == participant:
+                    utterance = clean_sent(utterance_inf['utterance'])
+                    utterance = replace_term(utterance)
+                    if len(utterance) <= min_len_char:
                         continue
+                    if utterance_inf.get('u_type') == 'say':
+                        _nested_utterance.append(utterance)
                     else:
-                        _nested_utterance.append(_utterance)
-
+                        _deleted.append(utterance)
         _nested_utterance = sorted(set(_nested_utterance), key=_nested_utterance.index) # remove duplications
-
-        if len(_nested_utterance) <= min_num_utter:
-            continue
-        else:
+        _deleted = sorted(set(_deleted), key=_deleted.index)
+        _deleted.append("")
+        deleted.extend(_deleted)
+        if len(_nested_utterance) > min_num_utter:
             nested_utterances.append(_nested_utterance)
-            labels.append(roles_label[participant_role])
+            labels.append(role2label[participant_role])
 
-    return nested_utterances, labels
+    return nested_utterances, labels, deleted
 
 
 def duplicate_werewolves(nested_utterances, labels):
@@ -134,16 +161,13 @@ def duplicate_werewolves(nested_utterances, labels):
 def make_split_train(save_dir, X_train , tokenizer, file_name):
     """save split train data for fasttext training"""
     with open(f'{save_dir}/{file_name}', 'w') as f:
-        for _nested_utterances in tqdm(X_train, desc=f"making {file_name}"):
-            for _utterance in _nested_utterances:
-                f.write(' '.join(tokenizer.tokenize(_utterance)))
-                f.write('\n')
+        for utterance in tqdm(sum(X_train, []), desc=f"making {file_name}"):
+            f.write(' '.join(tokenizer.tokenize(utterance + '\n')))
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sample", action="store_true")
-    parser.add_argument("--ROLES_USED", type=list, default={"人狼", "狂人", "村人", "占い師", "霊能者", "狩人"})
 
     args = parser.parse_args()
 
@@ -159,7 +183,14 @@ def main():
     shutil.rmtree(save_dir)
     os.mkdir(save_dir)
 
-    extract(files, save_dir, args.ROLES_USED)
+    kwargs = dict(
+        role2label={"人狼": 1, "狂人": 1, "村人": 0, "占い師": 0, "霊能者": 0, "狩人": 0, "共有者": 0, "ハムスター人間": 0},
+        used_role=["人狼", "狂人", "村人", "占い師", "霊能者", "狩人"],
+        min_len_char=10,
+        min_num_utter=10
+    )
+
+    extract(files, save_dir, kwargs)
 
     print('done!')
     if not args.sample:

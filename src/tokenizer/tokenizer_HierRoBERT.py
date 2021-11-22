@@ -20,7 +20,7 @@ class HierRoBertTokenizer():
         if len(input_ids) > self.sent_length:
             return input_ids[:self.sent_length], attention_mask[:self.sent_length]
         else:
-            padding = [0 for _ in range(self.sent_length - len(input_ids))]
+            padding = [1 for _ in range(self.sent_length - len(input_ids))]
             input_ids = input_ids + padding
             attention_mask = attention_mask + padding
             return input_ids, attention_mask
@@ -30,7 +30,7 @@ class HierRoBertTokenizer():
             return input_ids[:self.doc_length], attention_mask[:self.doc_length], 0
         else:
             pad_sent_num = self.doc_length - len(input_ids)
-            padding = [[0 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
+            padding = [[1 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
             input_ids = input_ids + padding
             attention_mask = attention_mask + padding
             return input_ids, attention_mask, pad_sent_num

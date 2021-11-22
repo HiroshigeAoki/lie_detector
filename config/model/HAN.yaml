@@ -1,6 +1,6 @@
 name: HAN
 
-model:
+config:
   _target_: src.model.HAN.HierAttnNet
   vocab_size: 32000
   weight_drop: 0.0

@@ -41,7 +41,7 @@ def main(cfg: DictConfig) -> None:
             )
 
             model = hydra.utils.instantiate(
-                cfg.model.model,
+                cfg.model.config,
                 optim=cfg.optim,
                 embedding_matrix=tokenizer.embedding_matrix,
                 _recursive_=False,
@@ -56,7 +56,7 @@ def main(cfg: DictConfig) -> None:
             )
 
             model = hydra.utils.instantiate(
-                cfg.model.model,
+                cfg.model.config,
                 pretrained_model=cfg.model.tokenizer.pretrained_model,
                 sent_level_BERT_config=cfg.model.sent_level_BERT_config,
                 optim=cfg.optim,
@@ -94,8 +94,8 @@ def main(cfg: DictConfig) -> None:
             trainer.test(model=test_model, datamodule=data_module)
 
         elif cfg.mode == 'plot_attention':
-            ckpt_path = f'/disk/ssd14tb/haoki/Documents/vscode-workplaces/lie_detector/outputs/wereWolf/HAN/baseline/{cfg.name}/checkpoints/epoch={cfg.best_epoch}.ckpt'
-            #ckpt_path = f'checkpoints/epoch={cfg.best_epoch}.ckpt'
+            #ckpt_path = f'/disk/ssd14tb/haoki/Documents/vscode-workplaces/lie_detector/outputs/wereWolf/HAN/baseline/{cfg.name}/checkpoints/epoch={cfg.best_epoch}.ckpt'
+            ckpt_path = f'checkpoints/epoch={cfg.best_epoch}.ckpt'
             predict_model = model.load_from_checkpoint(ckpt_path)
             outputs = trainer.predict(model=predict_model, datamodule=data_module)
             if cfg.model.name == 'HAN':
@@ -148,7 +148,7 @@ def main(cfg: DictConfig) -> None:
                 pad_token=pad_token,
             )
 
-            table_of_contents_list = joblib.Parallel(n_jobs=15, prefer='threads')(
+            table_of_contents_list = joblib.Parallel(n_jobs=10, prefer='threads')(
                 joblib.delayed(make_ploted_doc)(
                     *args,
                     kwargs=kwargs,

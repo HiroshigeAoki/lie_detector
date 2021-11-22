@@ -124,6 +124,25 @@ class HierchicalBERT(pl.LightningModule):
         logits = torch.cat([x['batch_preds'] for x in outputs])
         labels = torch.cat([x['batch_labels'] for x in outputs])
         epoch_loss = self.loss_fct(logits, labels)
+        from sklearn.metrics import precision_recall_fscore_support
+        import numpy as np
+        num_correct = (logits.argmax(dim=1) == labels).sum().item()
+        epoch_accuracy = num_correct / len(labels)
+        self.log("test_accuracy", epoch_accuracy, logger=True)
+        cm = ConfusionMatrix(num_classes=2)
+        df_cm = pd.DataFrame(cm(logits.argmax(dim=1).cpu(), labels.cpu()).numpy())
+        self.print(f"confusion_matrix\n{df_cm.to_string()}\n")
+        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), logits.argmax(dim=1).cpu())).T,
+                                    columns=["precision", "recall", "f1", "support"],
+                                )
+        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
+        return {'loss': epoch_loss, 'epoch_preds': logits, 'labels': labels}
+
+    """
+    def test_epoch_end(self, outputs):
+        logits = torch.cat([x['batch_preds'] for x in outputs])
+        labels = torch.cat([x['batch_labels'] for x in outputs])
+        epoch_loss = self.loss_fct(logits, labels)
         self.log("test_loss", epoch_loss, logger=True)
         cm = self.cm.compute()
         test_metrix = self.test_metrics.compute()
@@ -131,7 +150,7 @@ class HierchicalBERT(pl.LightningModule):
         self.log_dict(test_metrix, logger=True)
         pd.DataFrame(cm.cpu().numpy()).to_csv(f'{self.logger.log_dir}/confusionmatrix.csv')
         pd.DataFrame([metrix.cpu().numpy() for metrix in test_metrix.values()], index=test_metrix.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
-
+    """
     def predict_step(self, batch, batch_idx: int):
         outputs = self(**batch)
         return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
@@ -153,7 +172,7 @@ class BERTWordLevel(pl.LightningModule):
         if is_japanese:
             tokenizer = BertJapaneseTokenizer.from_pretrained(pretrained_model, additional_special_tokens=['<person>'])
             self.bert.resize_token_embeddings(len(tokenizer))
-            # initialize <person> token by the average of some personal_pronouns's weights.
+            # initialize  <person> token by the average of some personal_pronouns's weights.
             personal_pronouns = ['君', 'きみ', 'あなた' ,'彼', '彼女']
             personal_pronouns_weights = torch.stack([self.bert.embeddings.word_embeddings.weight[i, :] for i in tokenizer.convert_tokens_to_ids(personal_pronouns)])
             self.bert.embeddings.word_embeddings.weight.data[-1, :] = personal_pronouns_weights.mean(dim=0)
