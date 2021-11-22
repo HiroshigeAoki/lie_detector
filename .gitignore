@@ -6,3 +6,4 @@ venv
 outputs
 lightning_logs
 __pycache__/
+practice.ipynb
