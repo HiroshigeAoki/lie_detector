@@ -8,13 +8,14 @@ config:
   is_japanese: True
 
 tokenizer:
-  _target_: src.tokenizer.tokenizer_HierBERT.HierBertTokenizer
+  _target_: src.tokenizer.HFModelTokenizer.HFModelTokenizer
   sent_length: 256
   doc_length: 256
   pretrained_model: 'cl-tohoku/bert-large-japanese'
+  additional_tokens: <'person'>
 
 data_module:
-  _target_: src.datamodule.HierBERTDataModule.CreateHierBertDataModule
+  _target_: src.datamodule.HFModelDataModule.CreateHFModelDataModule
   batch_size: 64
 
 sent_level_BERT_config:

@@ -9,7 +9,7 @@ message:
 defaults:
   - _self_
   - model: HAN
-  - data: wereWolf
+  - data: nested
   - optim: AdamW
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
