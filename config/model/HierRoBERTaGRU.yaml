@@ -1,0 +1,28 @@
+name: HierRoBERTaGRU
+
+config:
+  _target_: src.model.HierRoBERTaGRU.HierchicalRoBERTaGRU
+  num_labels: 2
+  output_attentions: True
+  use_ave_pooled_output: True
+
+  sent_level_config:
+    _target_: src.model.HAN.SentAttnNet
+    word_hidden_dim: 32
+    sent_hidden_dim: 32
+    weight_drop: 0.0
+
+  classifier_config:
+    drop_out: 0.0
+    hidden_size: 32
+
+tokenizer:
+  _target_: src.tokenizer.HFModelTokenizer.HFModelTokenizer
+  sent_length: 256
+  doc_length: 256
+  pretrained_model: '/home/haoki/Documents/vscode-workplaces/japanese-pretrained-models/data/huggingface_model/roberta-ja-base-epoch28/'
+  additional_tokens: <'person'>
+
+data_module:
+  _target_: src.datamodule.HFModelDataModule.CreateHFModelDataModule
+  batch_size: 64
