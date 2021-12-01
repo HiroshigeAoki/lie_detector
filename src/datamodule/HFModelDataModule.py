@@ -26,7 +26,7 @@ class CreateDataset(Dataset):
         return dict(input_ids=input_ids, attention_mask=attention_mask, labels=torch.tensor(labels), pad_sent_num=pad_sent_num)
 
 
-class CreateHierBertDataModule(pl.LightningDataModule):
+class CreateHFModelDataModule(pl.LightningDataModule):
     def __init__(self, data_dir: str, batch_size: int, tokenizer):
         super().__init__()
         self.train_df = pd.read_pickle(data_dir + "train.pkl")

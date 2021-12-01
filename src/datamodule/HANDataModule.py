@@ -3,8 +3,6 @@ import pytorch_lightning as pl
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset
-import os, sys
-sys.path.append(os.pardir)
 
 
 class CreateHANDataset(Dataset):

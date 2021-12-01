@@ -1,18 +1,18 @@
 from typing import Tuple
 from pandas.core.frame import DataFrame
 import torch
+from transformers import AutoTokenizer
 
-from transformers import CamembertTokenizer
 
-
-class HierRoBertTokenizer():
+class HFModelTokenizer():
     def __init__(
         self,
         sent_length: int,
         doc_length: int,
-        pretrained_model: str = 'itsunoda/wolfbbsRoBERTa-large',
+        pretrained_model: str = 'cl-tohoku/bert-large-japanese',
+        additional_special_tokens: list = None,
         ):
-        self.tokenizer = CamembertTokenizer.from_pretrained(pretrained_model, additional_special_tokens=['<person>'])
+        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model, additional_special_tokens=additional_special_tokens)
         self.sent_length = sent_length
         self.doc_length = doc_length
 
@@ -20,7 +20,7 @@ class HierRoBertTokenizer():
         if len(input_ids) > self.sent_length:
             return input_ids[:self.sent_length], attention_mask[:self.sent_length]
         else:
-            padding = [1 for _ in range(self.sent_length - len(input_ids))]
+            padding = [0 for _ in range(self.sent_length - len(input_ids))]
             input_ids = input_ids + padding
             attention_mask = attention_mask + padding
             return input_ids, attention_mask
@@ -30,7 +30,7 @@ class HierRoBertTokenizer():
             return input_ids[:self.doc_length], attention_mask[:self.doc_length], 0
         else:
             pad_sent_num = self.doc_length - len(input_ids)
-            padding = [[1 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
+            padding = [[0 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
             input_ids = input_ids + padding
             attention_mask = attention_mask + padding
             return input_ids, attention_mask, pad_sent_num
@@ -38,7 +38,7 @@ class HierRoBertTokenizer():
     def encode(self, doc: DataFrame) -> Tuple[torch.LongTensor, torch.FloatTensor, int]:
         input_ids, attention_mask = [], []
         for sent in doc.values.tolist():
-            _input_ids, _attention_mask = self.tokenizer.encode_plus(''.join(sent)).values()
+            _input_ids, _, _attention_mask = self.tokenizer.encode_plus(''.join(sent)).values()
             _input_ids, _attention_mask = self.padding_word_level(_input_ids, _attention_mask)
             input_ids.append(_input_ids)
             attention_mask.append(_attention_mask)
