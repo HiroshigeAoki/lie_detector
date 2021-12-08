@@ -29,6 +29,7 @@ import traceback
 
 import hydra
 from omegaconf import DictConfig
+from omegaconf.omegaconf import OmegaConf
 
 from src.utils.gmail_send import Gmailsender
 
@@ -71,7 +72,7 @@ def main(cfg: DictConfig):
 
         # Load pretrained model
         logging.info("Load model")
-        model = SentenceTransformer(cfg.model.config.model_name)
+        model = SentenceTransformer(cfg.model.config.word_embedding_model) if not cfg.model.fit.resume_training else SentenceTransformer(cfg.model.fit.checkpoint_path_to_resume)
 
 
         ### Triplet losses ####################
@@ -105,33 +106,17 @@ def main(cfg: DictConfig):
         #logging.info("Performance before fine-tuning:")
         #dev_evaluator(model)
 
-        warmup_steps = int(len(train_dataloader) * cfg.model.config.num_epochs  * 0.1)  # 10% of train data
+        warmup_steps = int(len(train_dataloader) * cfg.model.fit.epochs  * 0.1)  # 10% of train data
 
-        checkpoints_dir = 'checkpoints'
-        output_path = './'
-        os.makedirs(checkpoints_dir, exist_ok=True)
+        os.makedirs(cfg.model.fit.output_path, exist_ok=True)
+        os.makedirs(cfg.model.fit.checkpoint_path, exist_ok=True)
 
         # Train the model
         model.fit(
             train_objectives=[(train_dataloader, train_loss)],
             evaluator=dev_evaluator,
-            epochs=cfg.model.config.num_epochs,
-            evaluation_steps=cfg.model.config.evaluation_steps,
             warmup_steps=warmup_steps,
-            use_amp = True,
-            # steps_per_epoch = None,
-            # scheduler = 'WarmupLinear',
-            # optimizer_class = transformers.AdamW,
-            # optimizer_params = {'lr': 2e-5},
-            # weight_decay = 0.01,
-            output_path = output_path,
-            # save_best_model = True,
-            # max_grad_norm = 1,
-            # callback = None,
-            # show_progress_bar = True,
-            checkpoint_path = checkpoints_dir,
-            checkpoint_save_steps = cfg.model.config.checkpoint_save_steps,
-            checkpoint_save_total_limit = 2
+            **OmegaConf.to_container(cfg.model.fit),
         )
 
         ##############################################################################

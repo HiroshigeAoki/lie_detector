@@ -4,12 +4,12 @@ import torch
 from transformers import AutoTokenizer
 
 
-class HFModelTokenizer():
+class HFT5Tokenizer():
     def __init__(
         self,
         sent_length: int,
         doc_length: int,
-        pretrained_model: str = 'cl-tohoku/bert-large-japanese',
+        pretrained_model: str = '',
         additional_special_tokens: list = None,
         ):
         self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model, additional_special_tokens=additional_special_tokens)
@@ -38,7 +38,7 @@ class HFModelTokenizer():
     def encode(self, doc: DataFrame) -> Tuple[torch.LongTensor, torch.FloatTensor, int]:
         input_ids, attention_mask = [], []
         for sent in doc.values.tolist():
-            _input_ids, _, _attention_mask = self.tokenizer.encode_plus(''.join(sent)).values()
+            _input_ids, _attention_mask = self.tokenizer.encode_plus(''.join(sent)).values()
             _input_ids, _attention_mask = self.padding_word_level(_input_ids, _attention_mask)
             input_ids.append(_input_ids)
             attention_mask.append(_attention_mask)

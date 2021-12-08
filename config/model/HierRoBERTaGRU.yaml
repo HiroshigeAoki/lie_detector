@@ -6,22 +6,20 @@ config:
   output_attentions: True
   use_ave_pooled_output: True
 
-  sent_level_config:
-    _target_: src.model.HAN.SentAttnNet
-    word_hidden_dim: 32
-    sent_hidden_dim: 32
-    weight_drop: 0.0
+sent_level_config:
+  word_hidden_dim: 768
+  sent_hidden_dim: 768
+  weight_drop: 0.0
 
-  classifier_config:
-    drop_out: 0.0
-    hidden_size: 32
+classifier_config:
+  drop_out: 0.0
 
 tokenizer:
-  _target_: src.tokenizer.HFModelTokenizer.HFModelTokenizer
+  _target_: src.tokenizer.HFT5Tokenizer.HFT5Tokenizer
   sent_length: 256
   doc_length: 256
   pretrained_model: '/home/haoki/Documents/vscode-workplaces/japanese-pretrained-models/data/huggingface_model/roberta-ja-base-epoch28/'
-  additional_tokens: <'person'>
+  # additional_tokens: None
 
 data_module:
   _target_: src.datamodule.HFModelDataModule.CreateHFModelDataModule

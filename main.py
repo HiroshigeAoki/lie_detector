@@ -47,9 +47,27 @@ def main(cfg: DictConfig) -> None:
                 _recursive_=False,
             )
 
-        elif cfg.model.name=='HierBERT' or cfg.model.name=='HierRoBERT':
+        elif cfg.model.name in ['HierRoBERTaGRU', 'HierSBERTGRU']:
             data_module = hydra.utils.instantiate(
                 cfg.model.data_module,
+                data_dir=cfg.data.dir,
+                tokenizer=cfg.model.tokenizer,
+                _recursive_=False,
+            )
+
+            model = hydra.utils.instantiate(
+                cfg.model.config,
+                pretrained_model=cfg.model.tokenizer.pretrained_model,
+                sent_level_config=cfg.model.sent_level_config,
+                classifier_config=cfg.model.classifier_config,
+                optim=cfg.optim,
+                _recursive_=False,
+            )
+
+        elif cfg.model.name in ['HierBERT', 'HierRoBERT']:
+            data_module = hydra.utils.instantiate(
+                cfg.model.data_module,
+                pretrained_model=cfg.model.tokenizer.pretrained_model,
                 data_dir=cfg.data.dir,
                 tokenizer=cfg.model.tokenizer,
                 _recursive_=False,
