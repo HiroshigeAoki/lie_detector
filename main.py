@@ -1,10 +1,11 @@
 import logging
 import traceback
+from pytorch_lightning import plugins
 
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
-from pytorch_lightning.plugins import DDPPlugin
+from pytorch_lightning.plugins import DDPPlugin, ParallelPlugin, DeepSpeedPlugin
 
 import hydra
 from omegaconf import OmegaConf, DictConfig
@@ -58,8 +59,6 @@ def main(cfg: DictConfig) -> None:
             model = hydra.utils.instantiate(
                 cfg.model.config,
                 pretrained_model=cfg.model.tokenizer.pretrained_model,
-                sent_level_config=cfg.model.sent_level_config,
-                classifier_config=cfg.model.classifier_config,
                 optim=cfg.optim,
                 _recursive_=False,
             )
@@ -94,11 +93,16 @@ def main(cfg: DictConfig) -> None:
 
         tb_logger = pl_loggers.TensorBoardLogger(".", "", "", log_graph=True, default_hp_metric=False)
 
+        #profiler = pl.profiler.PytorchProfiler(profile_memory=True)
+        #from pytorch_lightning.profiler import PyTorchProfiler
+        #profiler = PyTorchProfiler(filename='profile.txt')
+
         trainer = pl.Trainer(
             **OmegaConf.to_container(cfg.trainer),
             callbacks=[checkpoint_callback, early_stop_callback],
             logger=tb_logger,
-            plugins=DDPPlugin()
+            #strategy="ddp" if not cfg.optim=='FusedAdam' else 'strategy=deepspeed_stage_3',
+            plugins=DDPPlugin(find_unused_parameters=False),
         )
 
         """train, test, or plot_attention"""
