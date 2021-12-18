@@ -1,9 +1,9 @@
 hydra:
   run:
-    dir: outputs/${data.name}/${model.name}/${experiment}/${name}
+    dir: outputs/${data.name}/${model.name}/${experiment}/${outputdir_name}
 
 experiment: baseline
-name: ${now:%Y-%m-%d_%H%M%S}
+outputdir_name: ${now:%Y-%m-%d_%H%M%S}
 message:
 
 defaults:
@@ -51,7 +51,7 @@ trainer:
   # multiple_trainloader_mode: max_size_cycle
   # num_nodes: 1
   # num_processes: 1
-  # num_sanity_val_steps: 2
+  num_sanity_val_steps: 2
   overfit_batches: 0.0
   # plugins: None
   precision: 16

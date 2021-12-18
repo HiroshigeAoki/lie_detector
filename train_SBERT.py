@@ -66,7 +66,7 @@ def main(cfg: DictConfig):
 
         # We create a special dataset "SentenceLabelDataset" to wrap out train_set
         # It will yield batches that contain at least two samples with the same label
-        train_data_sampler = SentenceLabelDataset(train_set)
+        train_data_sampler = SentenceLabelDataset(train_set, with_replacement=True)
         train_dataloader = DataLoader(train_data_sampler, batch_size=cfg.model.config.batch_size, drop_last=True)
 
 
