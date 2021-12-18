@@ -3,7 +3,7 @@ import numpy as np
 from pandarallel import pandarallel
 from transformers import BertJapaneseTokenizer
 import argparse
-from src.utils.gmail_send import Gmailsender
+from gmail_send import Gmailsender
 
 tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
 
@@ -58,7 +58,8 @@ def make_stats_table(train, valid, test):
     train_row = calc_stats(train)
     valid_row = calc_stats(valid)
     test_row = calc_stats(test)
-    stats_table = pd.DataFrame({'train': train_row, 'valid': valid_row, 'test': test_row}, index=index)
+    all_row = calc_stats(pd.concat((train,valid,test),axis=0))
+    stats_table = pd.DataFrame({'train': train_row, 'valid': valid_row, 'test': test_row, 'all': all_row}, index=index)
     stats_table.iloc[1:] = stats_table.iloc[1:].applymap(lambda x: f'{x:,.2f}')
 
     return stats_table
@@ -68,7 +69,7 @@ def main():
     sender = Gmailsender()
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default='nested')
-    data_dir = 'data/nested'
+    data_dir = '../../data/nested'
     #data_dir = 'data/nested_sample'
     train = pd.read_pickle(f'{data_dir}/train.pkl')
     valid = pd.read_pickle(f'{data_dir}/valid.pkl')
