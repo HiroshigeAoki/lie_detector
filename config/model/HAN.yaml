@@ -17,7 +17,7 @@ data_module:
   batch_size: 64
 
 tokenizer:
-  _target_: src.tokenizer.tokenizer_HAN.HANtokenizer
+  _target_: src.tokenizer.HANTokenizer.HANTokenizer
   sent_length: 256
   doc_length: 256
   vocab_size: 32000

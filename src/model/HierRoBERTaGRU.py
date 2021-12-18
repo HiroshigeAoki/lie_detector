@@ -1,3 +1,4 @@
+from logging import raiseExceptions
 from typing import Tuple
 from omegaconf import DictConfig
 from omegaconf.omegaconf import OmegaConf
@@ -11,7 +12,6 @@ from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1, Conf
 from transformers import AutoModel
 import hydra
 
-from src.model.HierHFMoulde import HierarchicalHFModule
 from src.model.regularize import WeightDrop
 
 
@@ -20,11 +20,14 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         self,
         num_labels: int,
         pretrained_model: str,
-        sent_level_config: DictConfig,
-        classifier_config: DictConfig,
-        optim,
-        use_ave_pooled_output: bool,
         output_attentions: bool,
+        sent_embed_dim: int,
+        doc_embed_dim: int,
+        weight_drop: float,
+        classifier_drop_out: float,
+        pooling_strategy: str,
+        optim: DictConfig,
+        update_last_layer: bool,
         ):
         super(HierchicalRoBERTaGRU, self).__init__()
         self.save_hyperparameters()
@@ -32,17 +35,21 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         self.word_level_roberta = RoBERTaWordLevel(
             output_attentions=output_attentions,
             pretrained_model=pretrained_model,
-            use_ave_pooled_output=use_ave_pooled_output,
+            sent_embed_dim=sent_embed_dim,
+            pooling_strategy=pooling_strategy,
+            update_last_layer=update_last_layer,
         )
 
         self.sent_level_bigru = SentAttnNet(
-            **OmegaConf.to_container(sent_level_config),
+            sent_embed_dim=sent_embed_dim,
+            doc_embed_dim=doc_embed_dim,
+            weight_drop=weight_drop,
         )
 
         self.classifier = Classifier(
-            **OmegaConf.to_container(classifier_config),
+            drop_out=classifier_drop_out,
             num_labels=num_labels,
-            hidden_size=sent_level_config.sent_hidden_dim * 2,
+            hidden_size=doc_embed_dim * 2,
         )
 
         self.loss_fct = CrossEntropyLoss()
@@ -71,8 +78,9 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
                 word_attentions.append(outputs['attentions'])
         inputs_embeds = torch.stack(pooled_output_word_level).permute(1, 0, 2) # (sent_len, batch_size, hidden_dim) -> (batch_size, sent_len, hidden_dim)
         attention_mask = torch.ones_like(inputs_embeds)
+        max_doc_len = inputs_embeds.shape[1]
         for idx, _pad_sent_num in enumerate(pad_sent_num):
-            attention_mask[idx, _pad_sent_num:, :] = 0
+            attention_mask[idx, max_doc_len - _pad_sent_num:, :] = 0
         attention_mask = attention_mask == 0
         sent_attentions, doc_embedding = self.sent_level_bigru(inputs_embeds, attention_mask)
         loss, logits = self.classifier(doc_embedding, labels)
@@ -143,47 +151,64 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
 
 
-
 class RoBERTaWordLevel(pl.LightningModule):
     def __init__(self,
         output_attentions: bool,
         pretrained_model: str,
-        use_ave_pooled_output: bool, # CLS or average
+        sent_embed_dim: int,
+        pooling_strategy: str,
+        update_last_layer: bool,
         ):
         super(RoBERTaWordLevel, self).__init__()
         self.save_hyperparameters()
 
-        self.robert = AutoModel.from_pretrained(pretrained_model)
+        self.roberta = AutoModel.from_pretrained(pretrained_model)
 
-        """# won't update word level bert layers
-        for param in self.robert.parameters():
-            param.requires_grad = False"""
+        self.linear = nn.Linear(self.roberta.config.hidden_size, sent_embed_dim, bias=False)
+
+        self.pooling_strategy = pooling_strategy
+
+        """# only update the last word level bert layers"""
+        for param in self.roberta.parameters():
+            param.requires_grad = False
+
+        if update_last_layer:
+            for param in self.roberta.encoder.layer[-1].parameters():
+                param.requires_grad = True
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
-        last_hidden_state, pooled_output, attentions = self.robert(input_ids, attention_mask, output_attentions=self.hparams.output_attentions).values()
-        if self.hparams.use_ave_pooled_output:
-            pooled_output = last_hidden_state.mean(dim=1)
-        return dict(pooled_output=pooled_output, attentions=average_attention(attentions))
+        outputs = self.roberta(input_ids, attention_mask, output_attentions=self.hparams.output_attentions)
+        if self.pooling_strategy=='mean':
+            pooled_output=[]
+            for batch, mask in zip(outputs['last_hidden_state'], attention_mask):
+                accutual_sent_len = int(mask.sum())
+                pooled_output.append(batch[:accutual_sent_len].mean(0))
+            pooled_output = self.linear(torch.stack(pooled_output, dim=0))
+        elif self.pooling_strategy=='max':
+            pooled_output = self.linear(outputs['last_hidden_state'].max(1)[0])
+        else:
+            raiseExceptions(f'pooling_strategy "{self.pooling_strategy}" is invailed.')
+        return dict(pooled_output=pooled_output, attentions=average_attention(outputs['attentions']) if self.hparams.output_attentions else None)
 
 
 class SentAttnNet(pl.LightningModule):
     def __init__(
             self,
-            word_hidden_dim: int = 32,
-            sent_hidden_dim: int = 32,
-            weight_drop: float = 0.0,
+            sent_embed_dim: int,
+            doc_embed_dim: int,
+            weight_drop: float,
     ):
         super(SentAttnNet, self).__init__()
 
         self.rnn = nn.GRU(
-            word_hidden_dim, sent_hidden_dim, bidirectional=True, batch_first=True
+            sent_embed_dim, doc_embed_dim, bidirectional=True, batch_first=True
         )
         if weight_drop:
             self.rnn = WeightDrop(
                 self.rnn, ["weight_hh_l0", "weight_hh_l0_reverse"], dropout=weight_drop, device=self.device
             )
 
-        self.sent_attn = AttentionWithContext(sent_hidden_dim * 2)
+        self.sent_attn = AttentionWithContext(doc_embed_dim * 2)
 
     def forward(self, X, attention_mask): #will receive a tensor of dim(bsz, doc_len, word_hidden_dim * 2)
         X = X.masked_fill(attention_mask, 0)

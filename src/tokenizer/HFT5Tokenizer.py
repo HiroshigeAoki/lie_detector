@@ -11,27 +11,31 @@ class HFT5Tokenizer():
         doc_length: int,
         pretrained_model: str = '',
         additional_special_tokens: list = None,
+        pad_index: int = 1,
         ):
         self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model, additional_special_tokens=additional_special_tokens)
         self.sent_length = sent_length
         self.doc_length = doc_length
+        self.pad_index = pad_index
 
     def padding_word_level(self, input_ids: list[int], attention_mask: list[int]) -> Tuple[list[int], list[int]]:
-        if len(input_ids) > self.sent_length:
+        if len(input_ids) >= self.sent_length:
             return input_ids[:self.sent_length], attention_mask[:self.sent_length]
         else:
-            padding = [0 for _ in range(self.sent_length - len(input_ids))]
+            padding = [self.pad_index for _ in range(self.sent_length - len(input_ids))]
+            padding_attentionmask = [0 for _ in range(self.sent_length - len(input_ids))]
             input_ids = input_ids + padding
-            attention_mask = attention_mask + padding
+            attention_mask = attention_mask + padding_attentionmask
             return input_ids, attention_mask
 
     def padding_sent_level(self, input_ids: list[list[int]], attention_mask: list[list[int]]) -> Tuple[list[list[int]], list[list[int]], int]:
-        if len(input_ids) > self.doc_length:
+        if len(input_ids) >= self.doc_length:
             return input_ids[:self.doc_length], attention_mask[:self.doc_length], 0
         else:
             pad_sent_num = self.doc_length - len(input_ids)
-            padding = [[0 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
+            padding = [[self.pad_index for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
             input_ids = input_ids + padding
+            padding = [[0 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
             attention_mask = attention_mask + padding
             return input_ids, attention_mask, pad_sent_num
 

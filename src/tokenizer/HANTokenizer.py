@@ -9,7 +9,7 @@ sys.path.append(os.pardir)
 from src.preprocess.custom_mecab_tagger import CustomMeCabTagger
 from src.preprocess.custom_vocab_func import build_vocab_from_training_data
 
-class HANtokenizer():
+class HANTokenizer():
     def __init__(self, cache_dir: str, embed_dim: int, sent_length: int, doc_length: int, tokenizer_type: str, data_dir , **kwargs) -> None:
         self.sent_length = sent_length
         self.doc_length = doc_length
@@ -50,19 +50,20 @@ class HANtokenizer():
 
     def padding_sent_level(self, nested_utters: list[torch.tensor]) -> list[torch.tensor]:
         if len(nested_utters) > self.doc_length:
-            return nested_utters[:self.doc_length]
+            return nested_utters[:self.doc_length], 0
         else:
-            padding = [[1 for _ in range(self.sent_length)] for _ in range(self.doc_length - len(nested_utters))]
+            pad_sent_num = self.doc_length - len(nested_utters)
+            padding = [[1 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
             padded = nested_utters + padding
-            return padded
+            return padded, pad_sent_num
 
     def encode(self, nested_utters_df: pd.DataFrame) -> list[torch.tensor]:
         nested_utters_df_tokenied = nested_utters_df.apply(self.tokenize)
         nested_utters_df_numericalized = nested_utters_df_tokenied.apply(self.numericalize)
         nested_utters_df_padded_word = nested_utters_df_numericalized.apply(self.padding_word_level)
         nested_utter_padded_word = nested_utters_df_padded_word.to_list()
-        padded_nested_utters = self.padding_sent_level(nested_utter_padded_word)
-        return torch.tensor(padded_nested_utters)
+        padded_nested_utters, pad_sent_num = self.padding_sent_level(nested_utter_padded_word)
+        return torch.tensor(padded_nested_utters), pad_sent_num
 
     def batch_decode(self, indices: List[int]) -> List[str]:
         return self.vocab.lookup_tokens(indices)

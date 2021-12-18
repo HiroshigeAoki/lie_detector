@@ -32,11 +32,11 @@ class CreateHFModelDataModule(pl.LightningDataModule):
         self.train_df = pd.read_pickle(data_dir + "train.pkl")
         self.valid_df = pd.read_pickle(data_dir + "valid.pkl")
         self.test_df = pd.read_pickle(data_dir + "test.pkl")
-
         if isinstance(tokenizer, DictConfig):
             self.tokenizer = hydra.utils.instantiate(tokenizer)
         else:
             self.tokenizer = tokenizer
+
 
         self.n_cpus = os.cpu_count()
 
@@ -53,15 +53,15 @@ class CreateHFModelDataModule(pl.LightningDataModule):
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.train_ds, batch_size=self.hparams.batch_size,
-                    shuffle=True, num_workers=self.n_cpus)
+                    shuffle=True, num_workers=0)#self.n_cpus)
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.valid_ds, batch_size=self.hparams.batch_size,
-                    shuffle=False, num_workers=self.n_cpus)
+                    shuffle=False, num_workers=0)#self.n_cpus)
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.test_ds, batch_size=self.hparams.batch_size,
-                    shuffle=False, num_workers=self.n_cpus)
+                    shuffle=False, num_workers=0)#self.n_cpus)
 
     def predict_dataloader(self):
         return self.test_dataloader()

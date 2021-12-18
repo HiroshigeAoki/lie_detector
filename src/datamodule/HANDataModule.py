@@ -2,6 +2,7 @@ from typing import Optional
 import pytorch_lightning as pl
 import pandas as pd
 import torch
+import os
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -24,11 +25,11 @@ class CreateHANDataset(Dataset):
         nested_utters = df_row['raw_nested_utters']
         labels = self.df.loc[:,'labels'].iloc[index]
 
-        encoding = self.tokenizer.encode(nested_utters)
+        encoding, pad_sent_num = self.tokenizer.encode(nested_utters)
 
         assert encoding.shape == (self.tokenizer.doc_length, self.tokenizer.sent_length), f"encoding shape: {encoding.shape} is wrong."
 
-        return dict(nested_utters=encoding, labels=torch.tensor(labels))
+        return dict(nested_utters=encoding, labels=torch.tensor(labels), pad_sent_num=pad_sent_num)
 
 
 class CreateHANDataModule(pl.LightningDataModule):

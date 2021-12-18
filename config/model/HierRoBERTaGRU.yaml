@@ -4,22 +4,21 @@ config:
   _target_: src.model.HierRoBERTaGRU.HierchicalRoBERTaGRU
   num_labels: 2
   output_attentions: True
-  use_ave_pooled_output: True
-
-sent_level_config:
-  word_hidden_dim: 768
-  sent_hidden_dim: 768
+  sent_embed_dim: 50
+  doc_embed_dim: 50
+  pooling_strategy: max
+  update_last_layer: True
   weight_drop: 0.0
-
-classifier_config:
-  drop_out: 0.0
+  classifier_drop_out: 0.0
 
 tokenizer:
   _target_: src.tokenizer.HFT5Tokenizer.HFT5Tokenizer
   sent_length: 256
   doc_length: 256
+  #pretrained_model: 'itsunoda/wolfbbsRoBERTa-large'
   pretrained_model: '/home/haoki/Documents/vscode-workplaces/japanese-pretrained-models/data/huggingface_model/roberta-ja-base-epoch28/'
   # additional_tokens: None
+  pad_index: 3
 
 data_module:
   _target_: src.datamodule.HFModelDataModule.CreateHFModelDataModule
