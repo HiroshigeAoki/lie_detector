@@ -7,6 +7,7 @@ import pytorch_lightning as pl
 from torch.nn.modules.loss import CrossEntropyLoss
 from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1, ConfusionMatrix
 from transformers import RobertaModel, CamembertTokenizer, BertConfig
+from transformers.models.bert.modeling_bert import BertPreTrainedModel
 import hydra
 
 from src.model.HierBERT import BERTSentLevel, Classifier
@@ -66,9 +67,6 @@ class HierchicalRoBERT(pl.LightningModule):
         input_ids = input_ids.permute(1,0,2)
         attention_mask = attention_mask.permute(1,0,2)
 
-        # gen_torch_tensor_shape_assertion('input_ids', input_ids, (self.hparams.sent_length, input_ids.shape[1], self.hparams.doc_length))
-        # gen_torch_tensor_shape_assertion('attention_mask', attention_mask, (self.hparams.sent_length, input_ids.shape[1], self.hparams.doc_length))
-
         last_hidden_state_word_level, pooled_output_word_level, word_attentions = [], [], []
         for _input_ids, _attention_mask in zip(input_ids, attention_mask):
             outputs = self.word_level_roberta(input_ids=_input_ids, attention_mask=_attention_mask)
@@ -84,7 +82,6 @@ class HierchicalRoBERT(pl.LightningModule):
         return dict(loss=loss, logits=logits, word_attentions=word_attentions, sent_attentions=sent_attentions)
 
     def training_step(self, batch, batch_idx):
-        # loss, logits, attentions = self(batch['input_ids'], batch['attention_mask'], batch['labels'])
         outputs = self(**batch)
         return {'loss': outputs['loss'], 'batch_preds': outputs['logits'], 'batch_labels': batch['labels']}
 
@@ -127,16 +124,23 @@ class HierchicalRoBERT(pl.LightningModule):
         logits = torch.cat([x['batch_preds'] for x in outputs])
         labels = torch.cat([x['batch_labels'] for x in outputs])
         epoch_loss = self.loss_fct(logits, labels)
-        self.log("test_loss", epoch_loss, logger=True)
-        cm = self.cm.compute()
-        test_metrix = self.test_metrics.compute()
-        self.log("ConfusionMatrix", cm, logger=True)
-        self.log_dict(test_metrix, logger=True)
-        pd.DataFrame(cm.cpu().numpy()).to_csv(f'{self.logger.log_dir}/confusionmatrix.csv')
-        pd.DataFrame([metrix.cpu().numpy() for metrix in test_metrix.values()], index=test_metrix.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
+        from sklearn.metrics import precision_recall_fscore_support
+        import numpy as np
+        num_correct = (logits.argmax(dim=1) == labels).sum().item()
+        epoch_accuracy = num_correct / len(labels)
+        self.log("test_accuracy", epoch_accuracy, logger=True)
+        cm = ConfusionMatrix(num_classes=2)
+        df_cm = pd.DataFrame(cm(logits.argmax(dim=1).cpu(), labels.cpu()).numpy())
+        self.print(f"confusion_matrix\n{df_cm.to_string()}\n")
+        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), logits.argmax(dim=1).cpu())).T,
+                                    columns=["precision", "recall", "f1", "support"],
+                                )
+        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
+        return {'loss': epoch_loss, 'epoch_preds': logits, 'labels': labels}
 
     def predict_step(self, batch, batch_idx: int):
-        return self(**batch)
+        outputs = self(**batch)
+        return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
 
     def configure_optimizers(self):
         return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
@@ -164,10 +168,31 @@ class RoBERTaWordLevel(pl.LightningModule):
         for param in self.roberta.parameters():
             param.requires_grad = False
 
-
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         last_hidden_state, pooled_output, attentions = self.roberta(input_ids, attention_mask, output_attentions=self.hparams.output_attentions).values()
         return dict(last_hidden_state=last_hidden_state, pooled_output=pooled_output, attentions=average_attention(attentions))
+
+
+class Classifier(BertPreTrainedModel):
+    def __init__(self, num_labels, config):
+        super().__init__(config)
+        self.num_labels = num_labels
+        self.config = config
+
+        classifier_dropout = (
+            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
+        )
+        self.dropout = nn.Dropout(classifier_dropout)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        self.loss_fct = CrossEntropyLoss()
+
+        self.init_weights()
+
+    def forward(self, pooled_output, labels):
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+        loss = self.loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+        return loss, logits
 
 
 def average_attention(attentions):
