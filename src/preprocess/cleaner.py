@@ -16,7 +16,7 @@ def clean_sent(sent: str) -> str:
     sent = re.sub(r'[\u0900-\u0FFF\u2500-\u2E52]', '', sent) #記号の削除
     sent = re.sub(r'[0-9,]+[0-9]+', '0', sent) # numbers to 0
     sent = re.sub(r'[0-9]+\.?[0-9]*', '0', sent) # decimal to 0
-    sent = re.sub(r'[【】]', '', sent)
+    sent = re.sub(r'[【】\[\]]', '', sent)
     return sent.strip()
 
 
