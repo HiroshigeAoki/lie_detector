@@ -196,7 +196,7 @@ def main(cfg: DictConfig) -> None:
             list_args = [(i, *args) for i, args in enumerate(zip(input_ids, word_attentions, sent_attentions, pad_sent_num, probs, preds, labels))]
 
             kwargs = dict(
-                word_threshold=0.05, sent_threshold=0.04, word_cmap="Blues" , sent_cmap="Reds",
+                word_cmap="Blues" , sent_cmap="Reds",
                 word_color_level=3, sent_color_level=10, size=3,
                 ignore_tokens=ignore_tokens,
                 pad_token=pad_token,
