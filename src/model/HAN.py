@@ -162,12 +162,12 @@ class HierAttnNet(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
+        return hydra.utils.instantiate(self.hparams.optim.args, params=self.parameters())
 
 
     def predict_step(self, batch, batch_idx):
         outputs = self(batch['nested_utters'], batch['labels'], batch['pad_sent_num'])
-        return dict(input_ids=batch['nested_utters'], labels=batch['labels'], loss=outputs['loss'], logits=outputs['preds'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'])
+        return dict(input_ids=batch['nested_utters'], labels=batch['labels'], pad_sent_num=batch['pad_sent_num'], loss=outputs['loss'], logits=outputs['preds'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'])
 
 
 class WordAttnNet(pl.LightningModule):
