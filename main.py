@@ -14,6 +14,8 @@ from src.visualization.plot_attention import plot_attentions
 import os
 import joblib
 from tqdm import tqdm
+from collections import Counter
+import pandas as pd
 
 from src.utils.gmail_send import Gmailsender
 
@@ -28,10 +30,20 @@ def main(cfg: DictConfig) -> None:
         pl.seed_everything(1234)
         logger.info("\n" + OmegaConf.to_yaml(cfg))
 
+        cfg.data.dir = os.path.join(cfg.workplace_dir, cfg.data.dir)
+
         """instantiate"""
         if cfg.model.name == 'HAN':
+            cfg.tokenizer.args.cache_dir = os.path.join(cfg.workplace_dir, cfg.tokenizer.args.cache_dir)
+
+            if cfg.data.name=='nested_sample':
+                cfg.tokenizer.args.cache_dir = os.path.join(cfg.tokenizer.args.cache_dir, 'sample')
+
+            if cfg.tokenizer.name=='sentencepiece':
+                cfg.tokenizer.args.model_file = os.path.join(cfg.workplace_dir, cfg.tokenizer.args.model_file)
+
             tokenizer = hydra.utils.instantiate(
-                cfg.model.tokenizer,
+                cfg.tokenizer.args,
                 data_dir=cfg.data.dir,
             )
 
@@ -42,23 +54,26 @@ def main(cfg: DictConfig) -> None:
             )
 
             model = hydra.utils.instantiate(
-                cfg.model.config,
+                cfg.model.args,
                 optim=cfg.optim,
                 embedding_matrix=tokenizer.embedding_matrix,
                 _recursive_=False,
             )
 
         elif cfg.model.name in ['HierRoBERTaGRU', 'HierSBERTGRU']:
+            if cfg.tokenizer.name == 'rinna_roberta_bbs':
+                cfg.tokenizer.args.pretrained_model = os.path.join(cfg.workplace_dir, cfg.tokenizer.pretrained_model)
+
             data_module = hydra.utils.instantiate(
                 cfg.model.data_module,
                 data_dir=cfg.data.dir,
-                tokenizer=cfg.model.tokenizer,
+                tokenizer=cfg.tokenizer.args,
                 _recursive_=False,
             )
 
             model = hydra.utils.instantiate(
-                cfg.model.config,
-                pretrained_model=cfg.model.tokenizer.pretrained_model,
+                cfg.model.args,
+                pretrained_model=cfg.tokenizer.args.pretrained_model,
                 optim=cfg.optim,
                 _recursive_=False,
             )
@@ -66,15 +81,15 @@ def main(cfg: DictConfig) -> None:
         elif cfg.model.name in ['HierBERT', 'HierRoBERT']:
             data_module = hydra.utils.instantiate(
                 cfg.model.data_module,
-                pretrained_model=cfg.model.tokenizer.pretrained_model,
+                pretrained_model=cfg.tokenizer.args.pretrained_model,
                 data_dir=cfg.data.dir,
-                tokenizer=cfg.model.tokenizer,
+                tokenizer=cfg.tokenizer.args,
                 _recursive_=False,
             )
 
             model = hydra.utils.instantiate(
-                cfg.model.config,
-                pretrained_model=cfg.model.tokenizer.pretrained_model,
+                cfg.model.args,
+                pretrained_model=cfg.tokenizer.args.pretrained_model,
                 sent_level_BERT_config=cfg.model.sent_level_BERT_config,
                 optim=cfg.optim,
                 _recursive_=False,
@@ -97,34 +112,47 @@ def main(cfg: DictConfig) -> None:
         #from pytorch_lightning.profiler import PyTorchProfiler
         #profiler = PyTorchProfiler(filename='profile.txt')
 
+        #from pytorch_lightning.accelerators import GPUAccelerator
+        #from pytorch_lightning.plugins import NativeMixedPrecisionPlugin, DDPPlugin
+
+        #accelerator = GPUAccelerator()
+        #precision_plugin = NativeMixedPrecisionPlugin(precision=16, device="cuda")
+        #training_type_plugin = DDPPlugin(accelerator=accelerator, precision_plugin=precision_plugin)
+
         trainer = pl.Trainer(
             **OmegaConf.to_container(cfg.trainer),
             callbacks=[checkpoint_callback, early_stop_callback],
             logger=tb_logger,
-            #strategy="ddp" if not cfg.optim=='FusedAdam' else 'strategy=deepspeed_stage_3',
-            plugins=DDPPlugin(find_unused_parameters=False),
+            #strategy=training_type_plugin,
+            plugins=DDPPlugin(find_unused_parameters=True),
         )
 
-        """train, test, or plot_attention"""
+        """train, test or plot_attention"""
         if cfg.mode == 'train':
             trainer.fit(model=model, datamodule=data_module)
             trainer.test(ckpt_path=checkpoint_callback.best_model_path)
 
         elif cfg.mode == 'test':
             ckpt_path = f'checkpoints/epoch={cfg.best_epoch}.ckpt'
-            test_model = model.load_from_checkpoint(ckpt_path)
+            test_model = model.load_from_checkpoint(ckpt_path, strict=False)
             trainer.test(model=test_model, datamodule=data_module)
 
         elif cfg.mode == 'plot_attention':
-            #ckpt_path = f'/disk/ssd14tb/haoki/Documents/vscode-workplaces/lie_detector/outputs/wereWolf/HAN/baseline/{cfg.name}/checkpoints/epoch={cfg.best_epoch}.ckpt'
             ckpt_path = f'checkpoints/epoch={cfg.best_epoch}.ckpt'
-            predict_model = model.load_from_checkpoint(ckpt_path)
+            if cfg.mode=='debug':
+                ckpt_path = os.path.join(cfg.workplace_dir, 'outputs/nested/HAN/baseline/200dim_50_ignore_pad/checkpoints/epoch=0.ckpt')
+            predict_model = model.load_from_checkpoint(ckpt_path, strict=False)
             outputs = trainer.predict(model=predict_model, datamodule=data_module)
+
             if cfg.model.name == 'HAN':
                 logits = torch.cat([p['logits'] for p in outputs], dim=0)
                 word_attentions = torch.cat([p['word_attentions'] for p in outputs]).cpu()
                 sent_attentions = torch.cat([p['sent_attentions'].squeeze(2) for p in outputs]).cpu()
                 input_ids = torch.cat([p['input_ids'] for p in outputs]).cpu()
+                pad_sent_num = torch.cat(p['pad_sent_num'] for p in outputs).cpu()
+
+                #TODO: check the shape of pad_sent_num
+
                 labels = torch.cat([p['labels'] for p in outputs]).cpu()
                 ignore_tokens = ['<PAD>', '<unk>']
                 pad_token = '<PAD>'
@@ -139,48 +167,69 @@ def main(cfg: DictConfig) -> None:
             probs = softmax(logits).cpu()
             preds = logits.argmax(dim=1).cpu()
 
-            def make_ploted_doc(i, input_ids, word_weights,  sent_weights ,prob, pred, label, kwargs):
+            def make_ploted_doc(i, input_ids, word_weights, sent_weights, pad_sent_num ,prob, pred, label, kwargs):
                 doc = [list(map(lambda x: x.replace(' ', ''), tokenizer.batch_decode(ids.tolist()))) for ids in input_ids]
-                ploted_doc = plot_attentions(doc=doc, word_weights=word_weights, sent_weights=sent_weights, **kwargs)
+                ploted_doc, vital_word_count = plot_attentions(doc=doc, word_weights=word_weights, sent_weights=sent_weights, pad_sent_num=pad_sent_num, **kwargs)
                 table_of_contents_list = []
                 if pred == label:
                     if label == 1:
                         save_path = f'ploted_attention/TP/DC:{prob[label] * 100:.2f}% No.{i}.html' # DV stands for Degree of Conviction
                         table_of_contents_list.extend(('TP', save_path.replace('ploted_attention/TP/', '')))
+                        pred_class = 'TP'
                     elif label == 0:
                         save_path = f'ploted_attention/TN/DC:{prob[label] * 100:.2f}% No.{i}.html'
                         table_of_contents_list.extend(('TN', save_path.replace('ploted_attention/TN/', '')))
+                        pred_class = 'TN'
                 elif pred != label:
                     if label == 1:
                         save_path = f'ploted_attention/FP/DC:{prob[pred] * 100:.2f}% No.{i}.html'
                         table_of_contents_list.extend(('FP', save_path.replace('ploted_attention/FP/', '')))
+                        pred_class = 'FP'
                     elif label == 0:
                         save_path = f'ploted_attention/FN/DC:{prob[pred] * 100:.2f}% No.{i}.html'
                         table_of_contents_list.extend(('FN', save_path.replace('ploted_attention/FN/', '')))
+                        pred_class = 'FN'
                 with open(save_path, 'w') as f:
                     f.write(ploted_doc)
-                return table_of_contents_list
+                return table_of_contents_list, vital_word_count, pred_class, prob[pred]
 
-            list_args = [(i, *args) for i, args in enumerate(zip(input_ids, word_attentions, sent_attentions, probs, preds, labels))]
+            list_args = [(i, *args) for i, args in enumerate(zip(input_ids, word_attentions, sent_attentions, pad_sent_num, probs, preds, labels))]
 
             kwargs = dict(
-                threshold=0.05, word_cmap="Blues" , sent_cmap="Reds",
-                word_color_level=3, sent_color_level=30, size=3,
+                word_threshold=0.05, sent_threshold=0.04, word_cmap="Blues" , sent_cmap="Reds",
+                word_color_level=3, sent_color_level=10, size=3,
                 ignore_tokens=ignore_tokens,
                 pad_token=pad_token,
             )
 
-            table_of_contents_list = joblib.Parallel(n_jobs=10, prefer='threads')(
+            outputs = joblib.Parallel(n_jobs=10, prefer='threads')(
                 joblib.delayed(make_ploted_doc)(
                     *args,
                     kwargs=kwargs,
                 ) for args in tqdm(list_args, desc='making ploted doc')
             )
+
             template = '<td><a href="{}">{}</a></td>'
 
             table_of_contents = dict(TP=[], TN=[], FP=[], FN=[])
-            for tc in table_of_contents_list:
+            vital_word_count_dict = dict(
+                TP_90=[], TP_80=[], TP_70=[], TP_60_50=[],
+                TN_90=[], TN_80=[], TN_70=[], TN_60_50=[],
+                FP_90=[], FP_80=[], FP_70=[], FP_60_50=[],
+                FN_90=[], FN_80=[], FN_70=[], FN_60_50=[],
+            )
+            for output in outputs:
+                tc, vital_word_count, pred_class, prob = output[0], output[1], output[2], output[3]
                 table_of_contents.get(tc[0]).append(tc[1])
+                if prob >= 0.9:
+                    confidence = 90
+                elif 0.9 > prob >= 80:
+                    confidence = 80
+                elif 0.8 > prob >= 70:
+                    confidence = 70
+                else:
+                    confidence = '60_50'
+                vital_word_count_dict[f'{pred_class}_{confidence}'].extend(vital_word_count)
 
             par_link = [template.format(f'./{key}.html', key) for key in table_of_contents.keys()]
             with open('ploted_attention/index.html', 'w') as f:
@@ -197,6 +246,17 @@ def main(cfg: DictConfig) -> None:
                     for link in chi_link:
                         f.write('<li>' + link + '</li>')
                     f.write('</ui>')
+
+            def list_to_csv(pred_class_confidence, vital_word_list):
+                df = pd.DataFrame([{'token': token, 'freq': freq} for token, freq in Counter(vital_word_list).most_common()])
+                df.to_csv(f'ploted_attention/csv/{pred_class_confidence}_vital_word_freq.csv')
+
+            os.makedirs('ploted_attention/csv', exist_ok=True)
+            joblib.Parallel(n_jobs=4, prefer='threads')(
+                joblib.delayed(list_to_csv)(
+                    *args
+                ) for args in tqdm(vital_word_count_dict.items(), desc='making vital_word_count.csv')
+            )
 
         else:
             raise Exception(f'Mode:{cfg.mode} is invalid.')
