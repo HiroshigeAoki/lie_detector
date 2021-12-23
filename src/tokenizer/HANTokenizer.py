@@ -5,10 +5,9 @@ import torch
 from torchtext.vocab import Vectors
 import os, sys
 from transformers import BertJapaneseTokenizer
-sys.path.append(os.pardir)
 from src.preprocess.custom_mecab_tagger import CustomMeCabTagger
 from src.preprocess.custom_vocab_func import build_vocab_from_training_data
-from src.tokenizer.tokenizer_sentencepiece import SentencePieceTokenizer
+from src.tokenizer.SPTokenizer import SentencePieceTokenizer
 
 class HANTokenizer():
     def __init__(
@@ -19,6 +18,7 @@ class HANTokenizer():
             doc_length: int,
             tokenizer_type: str,
             data_dir,
+            pad_index: int,
             model_file: str = None,
             do_lower_case: bool = True,
             **kwargs
@@ -26,6 +26,7 @@ class HANTokenizer():
         self.sent_length = sent_length
         self.doc_length = doc_length
         self.specials = ['<unk>', '<PAD>', '<BOS>', '<EOS>']
+        self.pad_index = pad_index
         kwargs['specials'] = self.specials
         self.embed_dim = embed_dim
         self.vocab = build_vocab_from_training_data(data_dir, tokenizer_type, **kwargs)
@@ -59,7 +60,7 @@ class HANTokenizer():
         if len(utter) > self.sent_length:
             return utter[:self.sent_length]
         else:
-            padded = utter + [1 for _ in range(self.sent_length - len(utter))]
+            padded = utter + [self.pad_index for _ in range(self.sent_length - len(utter))]
             return padded
 
     def padding_sent_level(self, nested_utters: list[torch.tensor]) -> list[torch.tensor]:
@@ -67,7 +68,7 @@ class HANTokenizer():
             return nested_utters[:self.doc_length], 0
         else:
             pad_sent_num = self.doc_length - len(nested_utters)
-            padding = [[1 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
+            padding = [[self.pad_index for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
             padded = nested_utters + padding
             return padded, pad_sent_num
 
