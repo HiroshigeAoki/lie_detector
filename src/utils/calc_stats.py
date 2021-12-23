@@ -3,7 +3,9 @@ import numpy as np
 from pandarallel import pandarallel
 from transformers import BertJapaneseTokenizer
 import argparse
-from gmail_send import Gmailsender
+import os, sys
+sys.path.append('./src/')
+from utils.gmail_send import Gmailsender
 
 tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
 
@@ -69,8 +71,7 @@ def main():
     sender = Gmailsender()
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default='nested')
-    data_dir = '../../data/nested'
-    #data_dir = 'data/nested_sample'
+    data_dir = 'data/nested'
     train = pd.read_pickle(f'{data_dir}/train.pkl')
     valid = pd.read_pickle(f'{data_dir}/valid.pkl')
     test = pd.read_pickle(f'{data_dir}/test.pkl')
