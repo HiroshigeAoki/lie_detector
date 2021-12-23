@@ -1,0 +1,11 @@
+name: mecab
+
+args:
+  _target_: src.tokenizer.HANTokenizer.HANTokenizer
+  sent_length: 256
+  doc_length: 256
+  vocab_size: 32000
+  min_freq: 1
+  embed_dim: 200
+  tokenizer_type: 'mecab'
+  cache_dir: model/

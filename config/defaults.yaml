@@ -5,10 +5,12 @@ hydra:
 experiment: baseline
 outputdir_name: ${now:%Y-%m-%d_%H%M%S}
 message:
+workplace_dir: /home/haoki/Documents/vscode-wordplaces/lie_detector
 
 defaults:
   - _self_
   - model: HAN
+  - tokenizer: sentencepiece
   - data: nested
   - optim: AdamW
   - override hydra/job_logging: colorlog

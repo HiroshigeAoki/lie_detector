@@ -1,13 +1,14 @@
 from torchtext.vocab import Vocab, Vectors
 from collections import Counter, OrderedDict
 from typing import Dict, List, Optional, Iterable
+import os
 from torchtext._torchtext import (
     Vocab as VocabPybind,
 )
 
 def build_vocab_from_training_data(data_dir: str, tokenizer_type: str, **kwargs) -> Vocab:
     def yield_tokens():
-            with open(f'{data_dir}split-train-{tokenizer_type}.txt', 'r') as f:
+            with open(os.path.join(data_dir, f'split-train-{tokenizer_type}.txt'), 'r') as f:
                 for line in f:
                     yield line.split()
     return build_vocab_from_iterator_with_vocab_size(iterator=yield_tokens(), **kwargs)

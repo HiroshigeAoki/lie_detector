@@ -1,6 +1,6 @@
 name: Adam
 
-optimizer:
+args:
   _target_: torch.optim.Adam
   lr: 1e-3
   # betas: (0.9, 0.999)

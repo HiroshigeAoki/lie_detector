@@ -62,17 +62,17 @@ def main(cfg: DictConfig):
             raise ValueError(f'Model name{cfg.model.name} or data{cfg.data.name} are invalid. They must be "SBERT" and "triplet" or "triplet_sample" respectively.')
 
         logging.info("Loading BBS dataset")
-        train_set, dev_set, test_set = BBS_dataset(cfg.data.dir)
+        train_set, dev_set, test_set = BBS_dataset(os.path.join(cfg.workplace_dir, cfg.data.dir))
 
         # We create a special dataset "SentenceLabelDataset" to wrap out train_set
         # It will yield batches that contain at least two samples with the same label
         train_data_sampler = SentenceLabelDataset(train_set, with_replacement=True)
-        train_dataloader = DataLoader(train_data_sampler, batch_size=cfg.model.config.batch_size, drop_last=True)
+        train_dataloader = DataLoader(train_data_sampler, batch_size=cfg.model.args.batch_size, drop_last=True)
 
 
         # Load pretrained model
         logging.info("Load model")
-        model = SentenceTransformer(cfg.model.config.word_embedding_model) if not cfg.model.fit.resume_training else SentenceTransformer(cfg.model.fit.checkpoint_path_to_resume)
+        model = SentenceTransformer(cfg.model.args.word_embedding_model) if not cfg.model.fit.resume_training else SentenceTransformer(cfg.model.fit.checkpoint_path_to_resume)
 
 
         ### Triplet losses ####################
@@ -83,23 +83,23 @@ def main(cfg: DictConfig):
         ### - BatchAllTripletLoss
         #######################################
 
-        if cfg.model.config.loss_fnct == "all":
+        if cfg.modeargs.loss_fnct == "all":
             train_loss = losses.BatchAllTripletLoss(model=model)
-        elif cfg.model.config.loss_fnct == "hard":
+        elif cfg.modeargs.loss_fnct == "hard":
             train_loss = losses.BatchHardTripletLoss(model=model)
-        elif cfg.model.config.loss_fnct == "hard_soft_margin":
+        elif cfg.modeargs.loss_fnct == "hard_soft_margin":
             train_loss = losses.BatchHardSoftMarginTripletLoss(model=model)
-        elif cfg.model.config.loss_fnct == "semi_hard":
+        elif cfg.modeargs.loss_fnct == "semi_hard":
             train_loss = losses.BatchSemiHardTripletLoss(model=model)
         else:
-            raise ValueError('loss_fnct(cfg.model.config.loss_fnct) must be either of "all", "hard", "hard_soft_margin" or "semi_hard".')
+            raise ValueError('loss_fnct(cfg.model.args.loss_fnct) must be either of "all", "hard", "hard_soft_margin" or "semi_hard".')
 
 
         logging.info("Read BBS val dataset")
         dev_evaluator = TripletEvaluator.from_input_examples(
             dev_set,
             name='BBS-dev',
-            batch_size = cfg.model.config.batch_size,
+            batch_size = cfg.model.args.batch_size,
             show_progress_bar = True
         )
 
@@ -129,7 +129,7 @@ def main(cfg: DictConfig):
         test_evaluator = TripletEvaluator.from_input_examples(
             test_set,
             name='BBS-test',
-            batch_size = cfg.model.config.batch_size,
+            batch_size = cfg.model.args.batch_size,
             show_progress_bar = True,
         )
         model.evaluate(test_evaluator)

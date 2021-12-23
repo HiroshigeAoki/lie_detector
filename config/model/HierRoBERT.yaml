@@ -1,6 +1,6 @@
 name: HierRoBERT
 
-config:
+args:
   num_labels: 2
   _target_: src.model.HierRoBERT.HierchicalRoBERT
   use_ave_pooled_output: True

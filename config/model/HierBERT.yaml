@@ -1,6 +1,6 @@
 name: HierBERT
 
-config:
+args:
   num_labels: 2
   _target_: src.model.HierBERT.HierchicalBERT
   use_ave_pooled_output: True
@@ -16,7 +16,7 @@ tokenizer:
 
 data_module:
   _target_: src.datamodule.HFModelDataModule.CreateHFModelDataModule
-  batch_size: 64
+  batch_size: 32
 
 sent_level_BERT_config:
   _target_: transformers.BertConfig

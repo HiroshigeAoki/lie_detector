@@ -10,7 +10,7 @@ class CreateHANDataset(Dataset):
     def __init__(self,
                     df: pd.DataFrame,
                     batch_size: int,
-                    tokenizer
+                    tokenizer,
                 ):
         self.df = df
         self.batch_size = batch_size
@@ -35,9 +35,9 @@ class CreateHANDataset(Dataset):
 class CreateHANDataModule(pl.LightningDataModule):
     def __init__(self, data_dir, tokenizer, batch_size=16):
         super().__init__()
-        self.train_df = pd.read_pickle(data_dir + "train.pkl")
-        self.valid_df = pd.read_pickle(data_dir + "valid.pkl")
-        self.test_df = pd.read_pickle(data_dir + "test.pkl")
+        self.train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
+        self.valid_df = pd.read_pickle(os.path.join(data_dir, "valid.pkl"))
+        self.test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
         self.batch_size = batch_size
         self.tokenizer = tokenizer
         self.n_cpus = os.cpu_count()

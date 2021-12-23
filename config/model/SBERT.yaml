@@ -1,6 +1,6 @@
 name: SBERT
 
-config:
+args:
   loss_fnct: 'semi_hard'
   word_embedding_model: ''
   batch_size: 64
