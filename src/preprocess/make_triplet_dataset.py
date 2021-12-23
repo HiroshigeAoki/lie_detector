@@ -28,7 +28,7 @@ import random
 from collections import defaultdict
 import traceback
 
-sys.path.append(os.pardir)
+sys.path.append('./src/')
 from utils.gmail_send import Gmailsender
 
 
@@ -100,8 +100,8 @@ def main():
         args = parser.parse_args()
 
         gmail_sender = Gmailsender(subject="Execution end notification: make triplet dataset")
-        train, valid, test = BBS_dataset(directory='../../data/nested/') if not args.sample else BBS_dataset(directory='../../data/nested_sample/')
-        save_dir = "../../data/triplet/" if not args.sample else '../../data/triplet_sample/'
+        train, valid, test = BBS_dataset(directory='data/nested/') if not args.sample else BBS_dataset(directory='data/nested_sample/')
+        save_dir = "data/triplet/" if not args.sample else 'data/triplet_sample/'
         os.makedirs(save_dir, exist_ok=True)
         print('dump a triplet dataset')
         dump_as_pickle(save_dir, 'train.pkl', train)

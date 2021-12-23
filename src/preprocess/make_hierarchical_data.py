@@ -8,7 +8,7 @@ from transformers import BertJapaneseTokenizer
 import shutil
 import argparse
 import os, sys
-sys.path.append(os.pardir)
+sys.path.append('./src/')
 from preprocess.cleaner import clean_sent, replace_term
 from utils.gmail_send import Gmailsender
 from preprocess.custom_mecab_tagger import CustomMeCabTagger
@@ -171,9 +171,9 @@ def main():
 
     args = parser.parse_args()
 
-    files = sorted(glob.glob("../../../../corpus/BBSjsons/*/*.json"))  # 7249 files
+    files = sorted(glob.glob("../../corpus/BBSjsons/*/*.json"))  # 7249 files
 
-    save_dir = f"../../data/nested"
+    save_dir = f"data/nested"
 
     if args.sample:
         files = files[:3]
