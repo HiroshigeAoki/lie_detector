@@ -1,7 +1,6 @@
 from logging import raiseExceptions
 from typing import Tuple
 from omegaconf import DictConfig
-from omegaconf.omegaconf import OmegaConf
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -9,7 +8,7 @@ import pandas as pd
 import pytorch_lightning as pl
 from torch.nn.modules.loss import CrossEntropyLoss
 from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1, ConfusionMatrix
-from transformers import AutoModel
+from transformers import AutoModel, AutoTokenizer
 import hydra
 
 from src.model.regularize import WeightDrop
@@ -28,6 +27,7 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         pooling_strategy: str,
         optim: DictConfig,
         update_last_layer: bool,
+        additional_special_tokens: list(str) = None,
         ):
         super(HierchicalRoBERTaGRU, self).__init__()
         self.save_hyperparameters()
@@ -38,6 +38,7 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
             sent_embed_dim=sent_embed_dim,
             pooling_strategy=pooling_strategy,
             update_last_layer=update_last_layer,
+            additional_special_tokens=additional_special_tokens,
         )
 
         self.sent_level_bigru = SentAttnNet(
@@ -148,21 +149,32 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
 
     def configure_optimizers(self):
-        return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
+        return hydra.utils.instantiate(self.hparams.optim.args, params=self.parameters())
 
 
 class RoBERTaWordLevel(pl.LightningModule):
     def __init__(self,
-        output_attentions: bool,
         pretrained_model: str,
         sent_embed_dim: int,
         pooling_strategy: str,
+        output_attentions: bool,
         update_last_layer: bool,
+        additional_special_tokens: list(str) = None,
         ):
         super(RoBERTaWordLevel, self).__init__()
         self.save_hyperparameters()
 
         self.roberta = AutoModel.from_pretrained(pretrained_model)
+
+        if additional_special_tokens is not None and '<person>' in additional_special_tokens and len(additional_special_tokens) == 1:
+            tokenizer = AutoTokenizer.from_pretrained(pretrained_model, additional_special_tokens=additional_special_tokens)
+            self.roberta.resize_token_embeddings(len(tokenizer))
+            # initialize  <person> token by the average of some personal_pronouns's weights.
+            personal_pronouns = ['君', 'きみ', 'あなた' ,'彼', '彼女']
+            personal_pronouns_weights = torch.stack([self.roberta.embeddings.word_embeddings.weight[i, :] for i in tokenizer.convert_tokens_to_ids(personal_pronouns)])
+            self.roberta.embeddings.word_embeddings.weight.data[-1, :] = personal_pronouns_weights.mean(dim=0)
+        else:
+            raise ValueError(f"Additional tokens:{additional_special_tokens} except for the '<person>' token are currently not supported.")
 
         self.linear = nn.Linear(self.roberta.config.hidden_size, sent_embed_dim, bias=False)
 
@@ -171,7 +183,6 @@ class RoBERTaWordLevel(pl.LightningModule):
         """# only update the last word level bert layers"""
         for param in self.roberta.parameters():
             param.requires_grad = False
-
         if update_last_layer:
             for param in self.roberta.encoder.layer[-1].parameters():
                 param.requires_grad = True

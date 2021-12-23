@@ -10,7 +10,7 @@ class HFT5Tokenizer():
         sent_length: int,
         doc_length: int,
         pretrained_model: str = '',
-        additional_special_tokens: list = None,
+        additional_special_tokens: list(str) = None,
         pad_index: int = 1,
         ):
         self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model, additional_special_tokens=additional_special_tokens)

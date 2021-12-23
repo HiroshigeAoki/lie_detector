@@ -4,3 +4,4 @@ tokenizer:
   doc_length: 256
   pretrained_model: 'itsunoda/wolfbbsRoBERTa-large'
   pad_index: 1
+  additional_special_tokens: ['<person>']
