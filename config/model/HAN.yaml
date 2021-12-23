@@ -15,6 +15,3 @@ args:
 data_module:
   _target_: src.datamodule.HANDataModule.CreateHANDataModule
   batch_size: 64
-
-HAN_tokenizer:
-  - sp

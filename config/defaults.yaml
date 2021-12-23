@@ -5,7 +5,7 @@ hydra:
 experiment: baseline
 outputdir_name: ${now:%Y-%m-%d_%H%M%S}
 message:
-workplace_dir: /home/haoki/Documents/vscode-wordplaces/lie_detector
+workplace_dir: /home/haoki/Documents/vscode-workplaces/lie_detector
 
 defaults:
   - _self_
