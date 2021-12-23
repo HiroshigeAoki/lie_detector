@@ -4,14 +4,11 @@ import pandas as pd
 import torch
 import os
 from torch.utils.data import DataLoader, Dataset
+from src.tokenizer.HANTokenizer import HANTokenizer
 
 
 class CreateHANDataset(Dataset):
-    def __init__(self,
-                    df: pd.DataFrame,
-                    batch_size: int,
-                    tokenizer,
-                ):
+    def __init__(self, df: pd.DataFrame, batch_size: int, tokenizer: HANTokenizer):
         self.df = df
         self.batch_size = batch_size
         self.tokenizer = tokenizer
@@ -33,7 +30,7 @@ class CreateHANDataset(Dataset):
 
 
 class CreateHANDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir, tokenizer, batch_size=16):
+    def __init__(self, data_dir: str, tokenizer: HANTokenizer, batch_size: int):
         super().__init__()
         self.train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
         self.valid_df = pd.read_pickle(os.path.join(data_dir, "valid.pkl"))

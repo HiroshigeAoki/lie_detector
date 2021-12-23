@@ -1,4 +1,3 @@
-from logging import raiseExceptions
 from typing import Tuple
 from omegaconf import DictConfig
 import torch
@@ -9,6 +8,9 @@ import pytorch_lightning as pl
 from torch.nn.modules.loss import CrossEntropyLoss
 from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1, ConfusionMatrix
 from transformers import AutoModel, AutoTokenizer
+from sklearn.metrics import precision_recall_fscore_support
+import numpy as np
+import os
 import hydra
 
 from src.model.regularize import WeightDrop
@@ -68,6 +70,7 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
 
         self.cm = ConfusionMatrix(num_classes=num_labels, compute_on_step=False)
 
+
     def forward(self, input_ids: torch.FloatTensor, attention_mask: torch.LongTensor, pad_sent_num: torch.tensor, labels: torch.tensor):
         input_ids = input_ids.permute(1,0,2)
         attention_mask = attention_mask.permute(1,0,2)
@@ -87,13 +90,16 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         loss, logits = self.classifier(doc_embedding, labels)
         return dict(loss=loss, logits=logits, word_attentions=word_attentions, sent_attentions=sent_attentions.flatten(1))
 
+
     def training_step(self, batch, batch_idx):
         outputs = self(**batch)
         return {'loss': outputs['loss'], 'batch_preds': outputs['logits'], 'batch_labels': batch['labels']}
 
+
     def training_step_end(self, outputs):
         output = self.train_metrics(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
+
 
     def training_epoch_end(self, outputs):
         epoch_preds = torch.cat([x['batch_preds'] for x in outputs])
@@ -102,13 +108,16 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         self.log("train_loss", epoch_loss, logger=True)
         self.log_dict(self.train_metrics.compute(), logger=True)
 
+
     def validation_step(self, batch, batch_idx):
         outputs = self(**batch)
         return {'loss': outputs['loss'], 'batch_preds': outputs['logits'], 'batch_labels': batch['labels']}
 
+
     def validation_step_end(self, outputs):
         output = self.valid_metrics(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
+
 
     def validation_epoch_end(self, outputs):
         epoch_preds = torch.cat([x['batch_preds'] for x in outputs])
@@ -117,36 +126,51 @@ class HierchicalRoBERTaGRU(pl.LightningModule):
         self.log("val_loss", epoch_loss, logger=True)
         self.log_dict(self.valid_metrics.compute(), logger=True)
 
+
     def test_step(self, batch, batch_idx):
         outputs = self(**batch)
         return {'loss': outputs['loss'], 'batch_preds': outputs['logits'], 'batch_labels': batch['labels']}
+
 
     def test_step_end(self, outputs):
         output = self.test_metrics(outputs['batch_preds'], outputs['batch_labels'])
         self.cm(outputs['batch_preds'], outputs['batch_labels'])
         self.log_dict(output)
 
+
     def test_epoch_end(self, outputs):
         logits = torch.cat([x['batch_preds'] for x in outputs])
         labels = torch.cat([x['batch_labels'] for x in outputs])
         epoch_loss = self.loss_fct(logits, labels)
-        from sklearn.metrics import precision_recall_fscore_support
-        import numpy as np
+        self.log("test_loss", epoch_loss, logger=True)
+
+        test_metrics = self.test_metrics.compute()
+        self.log_dict(test_metrics, logger=True)
+        pd.DataFrame([metrics.cpu().numpy() for metrics in test_metrics.values()], index=test_metrics.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
+
+        cm = pd.DateOffset(self.cm.compute().cpu().numpy())
+        cm.to_csv(os.path.join(self.log_dir, 'confusionmatrix.csv'))
+        self.print(f"confusion_matrix\n{cm.to_string()}\n")
+
+        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(),
+            logits.argmax(dim=1).cpu())).T,
+            columns=["precision", "recall", "f1", "support"],
+        )
+        scores_df.to_csv(os.path.join(self.logger.log_dir), 'precision_recall_fscore_support.csv')
+        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
+
+        # for debug
         num_correct = (logits.argmax(dim=1) == labels).sum().item()
         epoch_accuracy = num_correct / len(labels)
-        self.log("test_accuracy", epoch_accuracy, logger=True)
-        cm = ConfusionMatrix(num_classes=2)
-        df_cm = pd.DataFrame(cm(logits.argmax(dim=1).cpu(), labels.cpu()).numpy())
-        self.print(f"confusion_matrix\n{df_cm.to_string()}\n")
-        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), logits.argmax(dim=1).cpu())).T,
-                                    columns=["precision", "recall", "f1", "support"],
-                                )
-        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
+        self.print(f"test_accuracy:{epoch_accuracy}")
+
         return {'loss': epoch_loss, 'epoch_preds': logits, 'labels': labels}
+
 
     def predict_step(self, batch, batch_idx: int):
         outputs = self(**batch)
         return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
+
 
     def configure_optimizers(self):
         return hydra.utils.instantiate(self.hparams.optim.args, params=self.parameters())
@@ -198,7 +222,7 @@ class RoBERTaWordLevel(pl.LightningModule):
         elif self.pooling_strategy=='max':
             pooled_output = self.linear(outputs['last_hidden_state'].max(1)[0])
         else:
-            raiseExceptions(f'pooling_strategy "{self.pooling_strategy}" is invailed.')
+            raise ValueError(f'pooling_strategy "{self.pooling_strategy}" is invailed.')
         return dict(pooled_output=pooled_output, attentions=average_attention(outputs['attentions']) if self.hparams.output_attentions else None)
 
 
@@ -263,6 +287,7 @@ class Classifier(pl.LightningModule):
         self.dropout = nn.Dropout(classifier_dropout)
         self.classifier = nn.Linear(hidden_size, num_labels)
         self.loss_fct = CrossEntropyLoss()
+
 
     def forward(self, pooled_output, labels):
         pooled_output = self.dropout(pooled_output)

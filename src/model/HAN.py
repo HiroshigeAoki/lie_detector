@@ -7,7 +7,7 @@ from torchmetrics import Accuracy, MetricCollection, Precision, Recall, F1, Conf
 import pytorch_lightning as pl
 from sklearn.metrics import precision_recall_fscore_support
 import hydra
-
+import os
 from src.model.regularize import embedded_dropout, WeightDrop, LockedDropout
 
 
@@ -144,21 +144,26 @@ class HierAttnNet(pl.LightningModule):
         labels = torch.cat([x['batch_labels'] for x in outputs])
         epoch_loss = self.criterion(preds, labels)
         self.log("test_loss", epoch_loss, logger=True)
-        cm = pd.DataFrame(self.cm.compute())
-        test_metrix = self.test_metrics.compute()
-        self.log_dict(test_metrix, logger=True)
-        cm.to_csv(f'{self.logger.log_dir}/confusionmatrix.csv')
-        pd.DataFrame([metrix.cpu().numpy() for metrix in test_metrix.values()], index=test_metrix.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
-        # For debug
+
+        test_metrics = self.test_metrics.compute()
+        self.log_dict(test_metrics, logger=True)
+        pd.DataFrame([metrics.cpu().numpy() for metrics in test_metrics.values()], index=test_metrics.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
+
+        cm = pd.DataFrame(self.cm.compute().cpu().numpy())
+        cm.to_csv(os.path.join(self.logger.log_dir, 'confusionmatrix.csv'))
+        self.print(f"confusion_matrix\n{cm.to_string()}\n")
+
+        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(),
+            preds.argmax(dim=1).cpu())).T,
+            columns=["precision", "recall", "f1", "support"],
+        )
+        scores_df.to_csv(os.path.join(self.logger.log_dir, 'precision_recall_fscore_support.csv'))
+        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
+
+        # for debug
         num_correct = (preds.argmax(dim=1) == labels).sum().item()
         epoch_accuracy = num_correct / len(labels)
-        scores_df = pd.DataFrame(np.array(precision_recall_fscore_support(labels.cpu(), preds.argmax(dim=1).cpu())).T,
-                                    columns=["precision", "recall", "f1", "support"],
-                                )
-        scores_df.to_csv(f'{self.logger.log_dir}/precision_recall_fscore_support.csv')
         self.print(f"test_accuracy:{epoch_accuracy}")
-        self.print(f"confusion_matrix\n{cm.to_string()}\n")
-        self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
 
 
     def configure_optimizers(self):
