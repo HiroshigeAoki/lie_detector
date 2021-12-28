@@ -22,11 +22,11 @@ class CreateHANDataset(Dataset):
         nested_utters = df_row['raw_nested_utters']
         labels = self.df.loc[:,'labels'].iloc[index]
 
-        encoding, pad_sent_num = self.tokenizer.encode(nested_utters)
+        encoding, attention_mask, pad_sent_num = self.tokenizer.encode(nested_utters)
 
         assert encoding.shape == (self.tokenizer.doc_length, self.tokenizer.sent_length), f"encoding shape: {encoding.shape} is wrong."
 
-        return dict(nested_utters=encoding, labels=torch.tensor(labels), pad_sent_num=pad_sent_num)
+        return dict(nested_utters=encoding, labels=torch.tensor(labels), attention_mask=attention_mask, pad_sent_num=pad_sent_num)
 
 
 class CreateHANDataModule(pl.LightningDataModule):
