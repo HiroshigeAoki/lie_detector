@@ -58,27 +58,34 @@ class HANTokenizer():
 
     def padding_word_level(self, utter: list[int]) -> list[int]:
         if len(utter) > self.sent_length:
-            return utter[:self.sent_length]
+            attention_mask = torch.ones(self.sent_length)
+            return pd.Series([utter[:self.sent_length], attention_mask.tolist()], index=['padded', 'attention_mask'])
         else:
             padded = utter + [self.pad_index for _ in range(self.sent_length - len(utter))]
-            return padded
+            attention_mask = torch.ones(self.sent_length)
+            attention_mask[len(utter):] = 0
+            return pd.Series([padded, attention_mask.tolist()], index=['padded', 'attention_mask'])
 
-    def padding_sent_level(self, nested_utters: list[torch.tensor]) -> list[torch.tensor]:
+    def padding_sent_level(self, nested_utters: list[torch.tensor], is_attention_mask=False) -> list[torch.tensor]:
         if len(nested_utters) > self.doc_length:
             return nested_utters[:self.doc_length], 0
         else:
             pad_sent_num = self.doc_length - len(nested_utters)
-            padding = [[self.pad_index for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
+            if not is_attention_mask:
+                padding = [[self.pad_index for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
+            else:
+                padding = [[0 for _ in range(self.sent_length)] for _ in range(pad_sent_num)]
             padded = nested_utters + padding
             return padded, pad_sent_num
 
-    def encode(self, nested_utters_df: pd.DataFrame) -> list[torch.tensor]:
+    def encode(self, nested_utters_df: pd.DataFrame):
         nested_utters_df_tokenied = nested_utters_df.apply(self.tokenize)
         nested_utters_df_numericalized = nested_utters_df_tokenied.apply(self.numericalize)
         nested_utters_df_padded_word = nested_utters_df_numericalized.apply(self.padding_word_level)
-        nested_utter_padded_word = nested_utters_df_padded_word.to_list()
+        nested_utter_padded_word = nested_utters_df_padded_word['padded'].to_list()
         padded_nested_utters, pad_sent_num = self.padding_sent_level(nested_utter_padded_word)
-        return torch.tensor(padded_nested_utters), pad_sent_num
+        attention_mask, _ = self.padding_sent_level(nested_utters_df_padded_word['attention_mask'].to_list(), is_attention_mask=True)
+        return torch.tensor(padded_nested_utters), torch.tensor(attention_mask), pad_sent_num
 
     def batch_decode(self, indices: List[int]) -> List[str]:
         return self.vocab.lookup_tokens(indices)

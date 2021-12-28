@@ -27,10 +27,11 @@ def main(args):
     sample_save_dir = os.path.join(save_dir, 'sample', f'{args.tokenizer}_vectors/dim_{args.dim}')
     shutil.rmtree(sample_save_dir, ignore_errors=True)
     os.makedirs(sample_save_dir, exist_ok=True)
-    print(f"Copy '.vec' file to {shutil.copy2(os.path.join(save_dir, 'model_fasttext.vec'), sample_save_dir)} for debug.")
+    print(f"Copy '.vec' file to '{shutil.copy2(os.path.join(save_dir, 'model_fasttext.vec'), sample_save_dir)}' for debug.")
 
     sender = Gmailsender()
     sender.send(f"fasttext(dim={args.dim})訓練終わり。")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

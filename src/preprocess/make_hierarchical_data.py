@@ -146,7 +146,7 @@ def duplicate_werewolves(nested_utterances, labels):
     difference = civil_num - len(werewolf_indices)
 
     if len(werewolf_indices) >= difference:
-        werewolf_indices[:civil_num]
+        werewolf_indices = werewolf_indices[:civil_num]
     else:
         for i in range(difference - len(werewolf_indices)):
             werewolf_indices.append(werewolf_indices[i])
