@@ -1,0 +1,23 @@
+name: sentencepiece-v2
+
+args:
+  _target_: src.tokenizer.HANTokenizer.HANTokenizer
+  sent_length: 256
+  doc_length: 256
+  vocab_size: 32000
+  min_freq: 1
+  embed_dim: 200
+  pad_index: 1
+  tokenizer_type: sp-v2
+  cache_dir: model/
+  model_file: model/sentencepiece-v2/werewolf.model
+
+plot_attention:
+  word_cmap: "Blues"
+  sent_cmap: "Reds"
+  word_color_level: 500
+  sent_color_level: 300
+  size: 3
+  ignore_tokens: ['<PAD>', '<unk>', '▁', '。', '、']
+  pad_token: '<PAD>'
+  n_gram: 'uni'
