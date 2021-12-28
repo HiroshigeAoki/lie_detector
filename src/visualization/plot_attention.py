@@ -6,8 +6,8 @@ from collections import Counter
 
 # colormaps: https://matplotlib.org/stable/tutorials/colors/colormaps.html
 def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weights: list[torch.tensor], pad_sent_num: torch.tensor,
-                        word_cmap="Blues" , sent_cmap="Reds", word_color_level=5, sent_color_level=5, size: int = 4,
-                        ignore_tokens = ['[PAD]', '[SEP]', '[CLS]', '[UNK]', '.', ' '], pad_token='[PAD]') -> str:
+                        word_cmap="Blues" , sent_cmap="Reds", word_color_level=1000, sent_color_level=1000, size: int = 4,
+                        ignore_tokens = ['[PAD]', '[SEP]', '[CLS]', '[UNK]', '.', ' '], pad_token='[PAD]', n_gram='uni') -> str:
 
     colored_doc = ""
     word_cmap = matplotlib.cm.get_cmap(word_cmap)
@@ -18,15 +18,15 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
     vital_word_list = []
     template_vital_word = '<li><font face="monospace" \nsize="{}"; span class="barcode"; style="color: black">{}・・・{}回</span></font></li>'
 
-    sent_threshold = adjust_threshold(len(doc) - pad_sent_num)
+    sent_threshold = adjust_threshold(len(doc) - int(pad_sent_num))
 
     for sent, _word_weights, sent_weight in zip(doc, word_weights, sent_weights):
         tokens, weights = [], []
         if sent[0] == pad_token:
             break
 
-        sent_color = matplotlib.colors.rgb2hex(sent_cmap(sent_weight.numpy() * sent_color_level)[:3]) if sent_weight.numpy() > sent_threshold else "#FFFFFF"
-        colored_doc += template_sent.format(size, sent_color, "&nbsp" + ' ' + "&nbsp")
+        sent_color = matplotlib.colors.rgb2hex(sent_cmap((sent_weight.numpy() - sent_threshold) * sent_color_level)[:3]) if sent_weight.numpy() > sent_threshold else "#FFFFFF"
+        colored_doc += template_sent.format(size, sent_color, "&nbsp" + '  ' + "&nbsp")
 
         for token, word_weight in zip(sent, _word_weights):
             if token in ignore_tokens:
@@ -38,10 +38,29 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
             tokens.append(token)
             weights.append(word_weight.numpy())
 
-        word_threshold = adjust_threshold(len(tokens))
-        for token, weight in zip(tokens, weights):
-            if word_weight.numpy() > word_threshold:
-                word_color = matplotlib.colors.rgb2hex(word_cmap(word_weight.numpy() * word_color_level)[:3])
+        if n_gram=='uni':
+            word_threshold = adjust_threshold(length=len(tokens))
+        elif n_gram=='bi':
+            word_threshold = adjust_threshold(length=len(tokens) / 2)
+        elif n_gram=='tri':
+            word_threshold = adjust_threshold(length=len(tokens) / 3)
+        else:
+            raise ValueError(f"'{n_gram}-gram' is not supported.")
+
+        #word_threshold = 0.05
+        for i, (token, weight) in enumerate(zip(tokens, weights)):
+            if n_gram=='bi':
+                if i+1 == len(tokens):
+                    break
+                token += tokens[i+1]
+                weight += weights[i+1]
+            elif n_gram=='tri':
+                if i+2 >= len(tokens):
+                    break
+                token += tokens[i+1] + tokens[i+2]
+                weight += weights[i+1] + weights[i+2]
+            if weight > word_threshold:
+                word_color = matplotlib.colors.rgb2hex(word_cmap((weight - word_threshold) * word_color_level)[:3])
                 vital_word_list.append(token)
             else:
                 word_color =  "#FFFFFF"
@@ -66,7 +85,7 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
     )
     return colored_doc, vital_word_list
 
-def adjust_threshold(length):
+def adjust_threshold(length: int) -> float:
     """adjust threshold according to lengths
 
     Shape:
@@ -74,12 +93,11 @@ def adjust_threshold(length):
         import matplotlib.pyplot as plt
         import numpy as np
         import math
-        a = 10
-        b = 10
+        a = 0.5
         x = np.linspace( 1, 256, 256)
-        y = a / (x + b)
+        y = a / x
         plt.plot(x, y)
-        plt.title(f'y = {a} / (x + {b})')
+        plt.title(f'y = {a} / x')
         plt.grid(color='grey', linestyle='-', linewidth=1, alpha=0.5)
         plt.xticks(np.arange(0,256,20))
         plt.yticks(np.arange(0,1,0.1))
@@ -92,5 +110,5 @@ def adjust_threshold(length):
     Returns:
         float: threshold
     """
-    y = 10 / (length + 10)
+    y = 1 / (length + 1e-10)
     return y

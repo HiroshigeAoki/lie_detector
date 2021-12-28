@@ -64,27 +64,32 @@ class HierAttnNet(pl.LightningModule):
         self.cm = ConfusionMatrix(num_classes=2, compute_on_step=False)
 
 
-    def forward(self, X, y, pad_sent_num):
+    def forward(self, X, y, attention_mask, pad_sent_num):
         x = X.permute(1, 0, 2) # X: (batch_size, doc_len, sent_len) -> x: (doc_len, bsz, sent_len)
+        attention_mask = attention_mask.permute(1, 0, 2)
+        attention_mask = attention_mask == 0
         word_h_n = torch.zeros(2, X.shape[0], self.hparams.word_hidden_dim, device=self.device)
 
         #alpha and s Tensor List
         word_a_list, word_s_list = [], []
-        for sent in x: # sent: (bsz, sent_len)
-            word_a, word_s, word_h_n = self.wordattnnet(sent, word_h_n)
+        for sent, _attention_mask in zip(x, attention_mask): # sent: (bsz, sent_len)
+            _attention_mask = _attention_mask
+            word_a, word_s, word_h_n = self.wordattnnet(sent, word_h_n, _attention_mask)
             word_a_list.append(word_a)
             word_s_list.append(word_s)
         #Importance attention weights per word in sentence
         self.sent_a = torch.cat(word_a_list, 1)
         #Sentence representation
         sent_s = torch.cat(word_s_list, 1)
-        attention_mask = torch.ones_like(sent_s)
+        sent_attention_mask = torch.ones_like(sent_s)
         max_doc_len = sent_s.shape[1]
         for idx, _pad_sent_num in enumerate(pad_sent_num):
-            attention_mask[idx, max_doc_len - _pad_sent_num:, :] = 0
-        attention_mask = attention_mask == 0
+            sent_attention_mask[idx, max_doc_len - _pad_sent_num:,:] = 0
+        sent_attention_mask = sent_attention_mask == 0
         #Importance attention weights per sentence in doc and document representation
-        doc_a, doc_s = self.sentattennet(sent_s, attention_mask)
+
+        doc_a, doc_s = self.sentattennet(sent_s, sent_attention_mask)
+
         self.doc_a = doc_a.permute(0, 2, 1)
         doc_s = self.last_drop(doc_s)
         preds = self.fc(doc_s) # (bsz, class_num)
@@ -93,8 +98,8 @@ class HierAttnNet(pl.LightningModule):
 
 
     def training_step(self, batch, batch_idx):
-        outputs = self(batch['nested_utters'], batch['labels'], batch['pad_sent_num'])
-        return {'loss': outputs['loss'], 'batch_preds': outputs['preds'], 'batch_labels': batch['labels']}
+        outputs = self(batch['nested_utters'], batch['labels'], batch['attention_mask'], batch['pad_sent_num'])
+        return dict(loss=outputs['loss'], batch_preds=outputs['preds'], batch_labels=batch['labels'])
 
 
     def training_step_end(self, outputs):
@@ -111,8 +116,8 @@ class HierAttnNet(pl.LightningModule):
 
 
     def validation_step(self, batch, batch_idx):
-        outputs = self(batch['nested_utters'], batch['labels'], batch['pad_sent_num'])
-        return {'loss': outputs['loss'], 'batch_preds': outputs['preds'], 'batch_labels': batch['labels']}
+        outputs = self(batch['nested_utters'], batch['labels'], batch['attention_mask'], batch['pad_sent_num'])
+        return dict(loss=outputs['loss'], batch_preds=outputs['preds'], batch_labels=batch['labels'])
 
 
     def validation_step_end(self, outputs):
@@ -129,8 +134,8 @@ class HierAttnNet(pl.LightningModule):
 
 
     def test_step(self, batch, batch_idx):
-        outputs = self(batch['nested_utters'], batch['labels'], batch['pad_sent_num'])
-        return {'loss': outputs['loss'], 'batch_preds': outputs['preds'], 'batch_labels': batch['labels']}
+        outputs = self(batch['nested_utters'], batch['labels'], batch['attention_mask'], batch['pad_sent_num'])
+        return dict(loss=outputs['loss'], batch_preds=outputs['preds'], batch_labels=batch['labels'])
 
 
     def test_step_end(self, outputs):
@@ -171,7 +176,7 @@ class HierAttnNet(pl.LightningModule):
 
 
     def predict_step(self, batch, batch_idx):
-        outputs = self(batch['nested_utters'], batch['labels'], batch['pad_sent_num'])
+        outputs = self(batch['nested_utters'], batch['labels'], batch['attention_mask'], batch['pad_sent_num'])
         return dict(input_ids=batch['nested_utters'], labels=batch['labels'], pad_sent_num=batch['pad_sent_num'], loss=outputs['loss'], logits=outputs['preds'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'])
 
 
@@ -208,7 +213,7 @@ class WordAttnNet(pl.LightningModule):
         self.word_atten = AttentionWithContext(hidden_dim * 2) # since GRU is bidirectional
 
 
-    def forward(self, X, h_n):
+    def forward(self, X, h_n, attention_mask):
         r"""
         :param X: each review in the batch. One sentence at a time. (bsz, seq_len)
         :param h_n(h_0): initial hidden state for each element in the batch. (num_layers*num_directions, batch, hidden_size)
@@ -227,16 +232,16 @@ class WordAttnNet(pl.LightningModule):
             embed = self.lockdrop(embed)
 
         h_t, h_n = self.rnn(embed, h_n)
-        a, s = self.word_atten(h_t)
+        a, s = self.word_atten(h_t, attention_mask)
         return a, s.unsqueeze(1), h_n
 
 
 class SentAttnNet(pl.LightningModule):
     def __init__(
             self,
-            word_hidden_dim: int = 32,
-            sent_hidden_dim: int = 32,
-            weight_drop: float = 0.0,
+            word_hidden_dim: int,
+            sent_hidden_dim: int,
+            weight_drop: float,
     ):
         super(SentAttnNet, self).__init__()
 
@@ -254,8 +259,9 @@ class SentAttnNet(pl.LightningModule):
     def forward(self, X, attention_mask): #will receive a tensor of dim(bsz, doc_len, word_hidden_dim * 2)
         X = X.masked_fill(attention_mask, 0)
         h_t, h_n = self.rnn(X)
-        a, v = self.sent_attn(h_t, attention_mask)
+        a, v = self.sent_attn(h_t, attention_mask[:,:,0])
         return a, v #doc vector (bsz, sent_hidden_dim*2)
+
 
 
 class AttentionWithContext(pl.LightningModule):
@@ -267,7 +273,7 @@ class AttentionWithContext(pl.LightningModule):
         self.contx = nn.Linear(hidden_dim, 1, bias=False)
 
 
-    def forward(self, h_t, attention_mask=None):
+    def forward(self, h_t, attention_mask):
         """caliculate the sentence vector s which is the weighted sum of word hidden states inp
 
         Args:
@@ -276,9 +282,8 @@ class AttentionWithContext(pl.LightningModule):
         Returns:
             [type]: [description]
         """
-        u = torch.tanh_(self.atten(h_t)) #inp: the output of the word-GRU as same as HAN's paper
-        if attention_mask is not None:
-            u = u.masked_fill(attention_mask, -1e4)
-        a = F.softmax(self.contx(u), dim=1)
+        u = self.contx(torch.tanh_(self.atten(h_t))) #inp: the output of the word-GRU as same as HAN's paper
+        u = u.masked_fill(attention_mask.unsqueeze(2), -1e4)
+        a = F.softmax(u, dim=1)
         s = (a * h_t).sum(1)
         return a.permute(0, 2, 1), s

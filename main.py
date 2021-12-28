@@ -140,7 +140,7 @@ def main(cfg: DictConfig) -> None:
         elif cfg.mode == 'plot_attention':
             ckpt_path = f'checkpoints/epoch={cfg.best_epoch}.ckpt'
             if cfg.mode=='debug':
-                ckpt_path = os.path.join(cfg.workplace_dir, 'outputs/nested/HAN/baseline/200dim_50_ignore_pad/checkpoints/epoch=0.ckpt')
+                ckpt_path = os.path.join(cfg.workplace_dir, 'outputs/nested/HAN/baseline/200_dim200_ignore_pad_sp_new/checkpoints/epoch=0.ckpt')
             predict_model = model.load_from_checkpoint(ckpt_path, strict=False)
             outputs = trainer.predict(model=predict_model, datamodule=data_module)
 
@@ -149,19 +149,17 @@ def main(cfg: DictConfig) -> None:
                 word_attentions = torch.cat([p['word_attentions'] for p in outputs]).cpu()
                 sent_attentions = torch.cat([p['sent_attentions'].squeeze(2) for p in outputs]).cpu()
                 input_ids = torch.cat([p['input_ids'] for p in outputs]).cpu()
-                pad_sent_num = torch.cat(p['pad_sent_num'] for p in outputs).cpu()
-
-                #TODO: check the shape of pad_sent_num
+                pad_sent_num = torch.cat([p['pad_sent_num'] for p in outputs]).cpu()
 
                 labels = torch.cat([p['labels'] for p in outputs]).cpu()
-                ignore_tokens = ['<PAD>', '<unk>']
-                pad_token = '<PAD>'
+
+            save_dir = f'plot_attention_{cfg.tokenizer.plot_attention.n_gram}-gram'
 
             # label 1: deceptive role, label 0: deceived role
-            os.makedirs('ploted_attention/TP', exist_ok=True) # preds: 1, label: 1
-            os.makedirs('ploted_attention/TN', exist_ok=True) # preds: 0, label: 0
-            os.makedirs('ploted_attention/FP', exist_ok=True) # preds: 1, label: 0
-            os.makedirs('ploted_attention/FN', exist_ok=True) # preds: 0, label: 1
+            os.makedirs(os.path.join(save_dir, 'TP'), exist_ok=True) # preds: 1, label: 1
+            os.makedirs(os.path.join(save_dir, 'TN'), exist_ok=True) # preds: 0, label: 0
+            os.makedirs(os.path.join(save_dir, 'FP'), exist_ok=True) # preds: 1, label: 0
+            os.makedirs(os.path.join(save_dir, 'FN'), exist_ok=True) # preds: 0, label: 1
 
             softmax = torch.nn.Softmax(dim=1)
             probs = softmax(logits).cpu()
@@ -173,39 +171,32 @@ def main(cfg: DictConfig) -> None:
                 table_of_contents_list = []
                 if pred == label:
                     if label == 1:
-                        save_path = f'ploted_attention/TP/DC:{prob[label] * 100:.2f}% No.{i}.html' # DV stands for Degree of Conviction
-                        table_of_contents_list.extend(('TP', save_path.replace('ploted_attention/TP/', '')))
                         pred_class = 'TP'
+                        file_name = f'DC:{prob[label] * 100:.2f}% No.{i}.html' # DV stands for Degree of Conviction
+                        table_of_contents_list.extend(('TP', file_name))
                     elif label == 0:
-                        save_path = f'ploted_attention/TN/DC:{prob[label] * 100:.2f}% No.{i}.html'
-                        table_of_contents_list.extend(('TN', save_path.replace('ploted_attention/TN/', '')))
                         pred_class = 'TN'
+                        file_name = f'DC:{prob[label] * 100:.2f}% No.{i}.html'
+                        table_of_contents_list.extend(('TN', file_name))
                 elif pred != label:
                     if label == 1:
-                        save_path = f'ploted_attention/FP/DC:{prob[pred] * 100:.2f}% No.{i}.html'
-                        table_of_contents_list.extend(('FP', save_path.replace('ploted_attention/FP/', '')))
                         pred_class = 'FP'
+                        file_name = f'DC:{prob[pred] * 100:.2f}% No.{i}.html'
+                        table_of_contents_list.extend(('FP', file_name))
                     elif label == 0:
-                        save_path = f'ploted_attention/FN/DC:{prob[pred] * 100:.2f}% No.{i}.html'
-                        table_of_contents_list.extend(('FN', save_path.replace('ploted_attention/FN/', '')))
                         pred_class = 'FN'
-                with open(save_path, 'w') as f:
+                        file_name = f'DC:{prob[pred] * 100:.2f}% No.{i}.html'
+                        table_of_contents_list.extend(('FN', file_name))
+                with open(os.path.join(save_dir, pred_class, file_name), 'w') as f:
                     f.write(ploted_doc)
                 return table_of_contents_list, vital_word_count, pred_class, prob[pred]
 
             list_args = [(i, *args) for i, args in enumerate(zip(input_ids, word_attentions, sent_attentions, pad_sent_num, probs, preds, labels))]
 
-            kwargs = dict(
-                word_cmap="Blues" , sent_cmap="Reds",
-                word_color_level=3, sent_color_level=10, size=3,
-                ignore_tokens=ignore_tokens,
-                pad_token=pad_token,
-            )
-
-            outputs = joblib.Parallel(n_jobs=10, prefer='threads')(
+            outputs = joblib.Parallel(n_jobs=-1)(
                 joblib.delayed(make_ploted_doc)(
                     *args,
-                    kwargs=kwargs,
+                    kwargs=OmegaConf.to_container(cfg.tokenizer.plot_attention),
                 ) for args in tqdm(list_args, desc='making ploted doc')
             )
 
@@ -223,16 +214,16 @@ def main(cfg: DictConfig) -> None:
                 table_of_contents.get(tc[0]).append(tc[1])
                 if prob >= 0.9:
                     confidence = 90
-                elif 0.9 > prob >= 80:
+                elif 0.9 > prob >= 0.8:
                     confidence = 80
-                elif 0.8 > prob >= 70:
+                elif 0.8 > prob >= 0.7:
                     confidence = 70
                 else:
                     confidence = '60_50'
                 vital_word_count_dict[f'{pred_class}_{confidence}'].extend(vital_word_count)
 
             par_link = [template.format(f'./{key}.html', key) for key in table_of_contents.keys()]
-            with open('ploted_attention/index.html', 'w') as f:
+            with open(os.path.join(save_dir, 'index.html'), 'w') as f:
                 f.write('<ui>')
                 for link in par_link:
                     f.write('<li>' + link + '</li>')
@@ -241,7 +232,7 @@ def main(cfg: DictConfig) -> None:
             for key, file_names in table_of_contents.items():
                 file_names = sorted(file_names, reverse=True)
                 chi_link = [template.format(f'./{key}/{file_name}', file_name) for file_name in file_names]
-                with open(f'ploted_attention/{key}.html', 'w') as f:
+                with open(os.path.join(save_dir, f'{key}.html'), 'w') as f:
                     f.write('<ui>')
                     for link in chi_link:
                         f.write('<li>' + link + '</li>')
@@ -249,10 +240,10 @@ def main(cfg: DictConfig) -> None:
 
             def list_to_csv(pred_class_confidence, vital_word_list):
                 df = pd.DataFrame([{'token': token, 'freq': freq} for token, freq in Counter(vital_word_list).most_common()])
-                df.to_csv(f'ploted_attention/csv/{pred_class_confidence}_vital_word_freq.csv')
+                df.to_csv(os.path.join(save_dir, f'csv/{pred_class_confidence}_vital_word_freq.csv'))
 
-            os.makedirs('ploted_attention/csv', exist_ok=True)
-            joblib.Parallel(n_jobs=4, prefer='threads')(
+            os.makedirs(os.path.join(save_dir, 'csv'), exist_ok=True)
+            joblib.Parallel(n_jobs=4)(
                 joblib.delayed(list_to_csv)(
                     *args
                 ) for args in tqdm(vital_word_count_dict.items(), desc='making vital_word_count.csv')
