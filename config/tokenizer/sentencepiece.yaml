@@ -11,3 +11,13 @@ args:
   tokenizer_type: sp
   cache_dir: model/
   model_file: model/sentencepiece/werewolf.model
+
+plot_attention:
+  word_cmap: "Blues"
+  sent_cmap: "Reds"
+  word_color_level: 500
+  sent_color_level: 300
+  size: 3
+  ignore_tokens: ['<PAD>', '<unk>', '▁', '。', '、']
+  pad_token: '<PAD>'
+  n_gram: 'uni'
