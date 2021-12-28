@@ -143,7 +143,7 @@ class HierchicalRoBERT(pl.LightningModule):
         return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
 
     def configure_optimizers(self):
-        return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
+        return hydra.utils.instantiate(self.hparams.optim.args, params=self.parameters())
 
 
 class RoBERTaWordLevel(pl.LightningModule):

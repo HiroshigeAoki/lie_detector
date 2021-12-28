@@ -151,4 +151,4 @@ class HierchicalBERTGRU(pl.LightningModule):
         return super().predict_step(batch, batch_idx, dataloader_idx=dataloader_idx)
 
     def configure_optimizers(self):
-        return hydra.utils.instantiate(self.hparams.optim, params=self.parameters())
+        return hydra.utils.instantiate(self.hparams.optim.args, params=self.parameters())
