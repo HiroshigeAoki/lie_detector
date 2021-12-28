@@ -90,8 +90,8 @@ def replace_term(sent: str) -> str:
     #reg3 = regex.compile(rf"(?V1)(?<=(({name_char}|{role_names}|{nick_names})({particles}|{honorific_titles})|<person>|{person_particles}|{person_honorific_titles}|{symbols}|{role_names}|{name_char}|希望出し))({name_char}|{nick_names})(?!({ignore_suffix}))")
     reg3 = regex.compile(rf"(?V1)(?<=(((<person>|{role_names}|{symbols})({particles}|{honorific_titles}|{symbols})*)|{particles}|希望出し))({name_char}|{nick_names})(?!({ignore_suffix}))")
 
-    sent = regex.sub(r'旅行(?=(に|へ|でもいかない|でもいかない|行く|いく))', '&旅&行&', sent)
-    sent = regex.sub(r'負傷(?=(した|して|がひどい|こそ|具合))', '&負&傷&', sent)
+    sent = regex.sub(r'旅行(?=(に|へ|でもいかない|でもいかない|行く|いく))', '@旅@行@', sent)
+    sent = regex.sub(r'負傷(?=(した|して|がひどい|こそ|具合))', '@負@傷@', sent)
     sent = regex.sub(r'(?=(足|手|体))負傷', '@負@傷@', sent)
     sent = regex.sub(r'宿屋(?=(に|の))', '@宿@屋@', sent)
     sent = regex.sub(r'村人(?=(なら|は|の|を))', '@村@人@', sent)
