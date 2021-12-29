@@ -3,7 +3,6 @@ import glob
 import pickle
 from tqdm import trange, tqdm
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from transformers import BertJapaneseTokenizer
 import shutil
 import argparse
@@ -76,15 +75,29 @@ def extract(filePaths, save_dir, kwargs):
         train_for_tapt.extend(train)
         train_for_tapt.append("")
 
+    bbs_data = train_for_tapt + deleted
+
     with open(f'{save_dir}/bbs.txt', 'w') as f: # for tapt pretraining of RoBERTa.
-        for utterance in tqdm(train_for_tapt + deleted, desc="making bbs.txt"):
+        for utterance in tqdm(bbs_data, desc="making bbs.txt"):
             f.write(utterance + '\n')
 
-    tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc")
-    make_split_train(save_dir, X_train, tokenizer, file_name='split-train-mecab.txt') # mecab version
+    tokenizer, path, _data = []
 
-    tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
-    make_split_train(save_dir, X_train, tokenizer, file_name='split-train-mecab-wordpiece.txt') # mecab wordpiece version
+    tokenizer.append(CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc"))
+    path.append(os.path.join(save_dir, 'split-train-mecab.txt'))
+    _data.append(bbs_data)
+
+    tokenizer.append(BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>']))
+    path.append(os.path.join(save_dir, 'split-train-mecab-wordpiece.txt'))
+    _data.append(bbs_data)
+
+    list_args = [a for a in zip(tokenizer, path, _data)]
+
+    joblib.Parallel(n_jobs=2)(
+        joblib.delayed(make_split_train)(
+            *args,
+        ) for args in tqdm(list_args, desc='making split train data...')
+    )
 
     print("duplicating werewolf dataset")
     X_train, y_train, users_train = duplicate_werewolves(X_train, y_train, users_train)
@@ -200,10 +213,10 @@ def duplicate_werewolves(nested_utterances, labels, users):
     return nested_utterances, labels, users
 
 
-def make_split_train(save_dir, X_train , tokenizer, file_name):
+def make_split_train(tokenizer, path, data):
     """save split train data for fasttext training"""
-    with open(f'{save_dir}/{file_name}', 'w') as f:
-        for utterance in tqdm(sum(X_train, []), desc=f"making {file_name}"):
+    with open(path, 'w') as f:
+        for utterance in data:
             f.write(' '.join(tokenizer.tokenize(utterance + '\n')))
 
 
