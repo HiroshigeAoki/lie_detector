@@ -1,7 +1,9 @@
 import sentencepiece as spm
 import argparse
 
-import os
+import os,sys
+sys.path.append('./src/')
+from utils.gmail_send import Gmailsender
 
 
 def main(args):
@@ -28,6 +30,9 @@ def main(args):
         with open(os.path.join(args.input_dir, f'split-train-{args.version}.txt'), "w") as outfile:
             for line in f:
                 outfile.writelines(" ".join(sp.Encode(input=line, out_type=str))+"\n")
+
+    sender = Gmailsender()
+    sender.send('sentencepice training完了')
 
 
 if __name__ == "__main__":
