@@ -15,8 +15,10 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
     template_word = '<font face="monospace" \nsize="{}"; span class="barcode"; style="color: black; background-color: {}">{}</span></font>'
     template_sent = '<font face="monospace" \nsize="{}"; span class="barcode"; style="color: black; background-color: {}">{}</span></font>'
 
-    vital_word_list = []
-    template_vital_word = '<li><font face="monospace" \nsize="{}"; span class="barcode"; style="color: black">{}・・・{}回</span></font></li>'
+    vital_word_list_freq = []
+    vital_word_dict_weight = {}
+    template_vital_word_freq = '<li><font face="monospace" \nsize="{}"; span class="barcode"; style="color: black">{}・・・{}回</span></font></li>'
+    template_vital_word_weight = '<li><font face="monospace" \nsize="{}"; span class="barcode"; style="color: black">{}・・・{:.4f}</span></font></li>'
 
     sent_threshold = adjust_threshold(len(doc) - int(pad_sent_num))
 
@@ -41,9 +43,9 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
         if n_gram=='uni':
             word_threshold = adjust_threshold(length=len(tokens))
         elif n_gram=='bi':
-            word_threshold = adjust_threshold(length=len(tokens) / 2)
+            word_threshold = adjust_threshold(length=(len(tokens)-1) / 2)
         elif n_gram=='tri':
-            word_threshold = adjust_threshold(length=len(tokens) / 3)
+            word_threshold = adjust_threshold(length=(len(tokens)-2) / 3)
         else:
             raise ValueError(f"'{n_gram}-gram' is not supported.")
 
@@ -61,21 +63,31 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
                 weight += weights[i+1] + weights[i+2]
             if weight > word_threshold:
                 word_color = matplotlib.colors.rgb2hex(word_cmap((weight - word_threshold) * word_color_level)[:3])
-                vital_word_list.append(token)
+                vital_word_list_freq.append(token)
+                vital_word_dict_weight[token] = vital_word_dict_weight.get(token, 0) + (weight - word_threshold)
             else:
                 word_color =  "#FFFFFF"
             colored_doc += template_word.format(size, word_color, token)
 
         colored_doc += '</br>'
 
-    vital_word_count = Counter(vital_word_list)
-    sorted_vital_words = vital_word_count.most_common()
-    vital_word_table = ''
-    for token, freq in sorted_vital_words:
-        vital_word_table += template_vital_word.format(size, token, freq)
+    vital_word_count_freq = Counter(vital_word_list_freq)
+    sorted_vital_words_freq = vital_word_count_freq.most_common()
+    vital_word_table_freq = ''
+    for token, freq in sorted_vital_words_freq:
+        vital_word_table_freq += template_vital_word_freq.format(size, token, freq)
+
+    sorted_vital_words_weight = sorted(vital_word_dict_weight.items(), key= lambda x: x[1], reverse=True)
+    vital_word_table_weight = ''
+    for token, weight in sorted_vital_words_weight:
+        vital_word_table_weight += template_vital_word_weight.format(size, token, weight)
 
     colored_doc = (
-        f'<h1>重要単語リスト(出現頻度順)</h1><ol>{vital_word_table}</ol>'
+        f'<h1>重要単語リスト(出現頻度順)</h1><ol>{vital_word_table_freq}</ol>'
+        +
+        '<hr style="border:0;border-top:medium solid black;">'
+        +
+        f'<h1>重要単語リスト(重み順)</h1><ol>{vital_word_table_weight}</ol>'
         +
         '<hr style="border:0;border-top:medium solid black;">'
         +
@@ -83,7 +95,7 @@ def plot_attentions(doc: list[str], word_weights: list[torch.tensor], sent_weigh
         +
         colored_doc
     )
-    return colored_doc, vital_word_list
+    return colored_doc, vital_word_list_freq, vital_word_dict_weight
 
 def adjust_threshold(length: int) -> float:
     """adjust threshold according to lengths
@@ -110,5 +122,5 @@ def adjust_threshold(length: int) -> float:
     Returns:
         float: threshold
     """
-    y = 1 / (length + 1e-10)
+    y = 1 / (length + 1e-100)
     return y

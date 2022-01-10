@@ -36,10 +36,10 @@ def main(cfg: DictConfig) -> None:
         if cfg.model.name == 'HAN':
             cfg.tokenizer.args.cache_dir = os.path.join(cfg.workplace_dir, cfg.tokenizer.args.cache_dir)
 
-            if cfg.data.name=='nested_sample':
+            if cfg.data.name == 'nested_sample':
                 cfg.tokenizer.args.cache_dir = os.path.join(cfg.tokenizer.args.cache_dir, 'sample')
 
-            if cfg.tokenizer.name=='sentencepiece':
+            if cfg.tokenizer.name == 'sentencepiece':
                 cfg.tokenizer.args.model_file = os.path.join(cfg.workplace_dir, cfg.tokenizer.args.model_file)
 
             tokenizer = hydra.utils.instantiate(
@@ -167,7 +167,7 @@ def main(cfg: DictConfig) -> None:
 
             def make_ploted_doc(i, input_ids, word_weights, sent_weights, pad_sent_num ,prob, pred, label, kwargs):
                 doc = [list(map(lambda x: x.replace(' ', ''), tokenizer.batch_decode(ids.tolist()))) for ids in input_ids]
-                ploted_doc, vital_word_count = plot_attentions(doc=doc, word_weights=word_weights, sent_weights=sent_weights, pad_sent_num=pad_sent_num, **kwargs)
+                ploted_doc, vital_word_count_freq, vital_word_count_weight = plot_attentions(doc=doc, word_weights=word_weights, sent_weights=sent_weights, pad_sent_num=pad_sent_num, **kwargs)
                 table_of_contents_list = []
                 if pred == label:
                     if label == 1:
@@ -189,11 +189,11 @@ def main(cfg: DictConfig) -> None:
                         table_of_contents_list.extend(('FN', file_name))
                 with open(os.path.join(save_dir, pred_class, file_name), 'w') as f:
                     f.write(ploted_doc)
-                return table_of_contents_list, vital_word_count, pred_class, prob[pred]
+                return table_of_contents_list, vital_word_count_freq, vital_word_count_weight, pred_class, prob[pred]
 
             list_args = [(i, *args) for i, args in enumerate(zip(input_ids, word_attentions, sent_attentions, pad_sent_num, probs, preds, labels))]
 
-            outputs = joblib.Parallel(n_jobs=-1)(
+            outputs = joblib.Parallel(n_jobs=3, backend="threading")(
                 joblib.delayed(make_ploted_doc)(
                     *args,
                     kwargs=OmegaConf.to_container(cfg.tokenizer.plot_attention),
@@ -203,14 +203,12 @@ def main(cfg: DictConfig) -> None:
             template = '<td><a href="{}">{}</a></td>'
 
             table_of_contents = dict(TP=[], TN=[], FP=[], FN=[])
-            vital_word_count_dict = dict(
-                TP_90=[], TP_80=[], TP_70=[], TP_60_50=[],
-                TN_90=[], TN_80=[], TN_70=[], TN_60_50=[],
-                FP_90=[], FP_80=[], FP_70=[], FP_60_50=[],
-                FN_90=[], FN_80=[], FN_70=[], FN_60_50=[],
-            )
+
+            vital_word_count_dict_freq = {}
+            vital_word_count_dict_weight = {}
+
             for output in outputs:
-                tc, vital_word_count, pred_class, prob = output[0], output[1], output[2], output[3]
+                tc, vital_word_count_freq, vital_word_count_weight, pred_class, prob = output[0], output[1], output[2], output[3], output[4]
                 table_of_contents.get(tc[0]).append(tc[1])
                 if prob >= 0.9:
                     confidence = 90
@@ -220,7 +218,9 @@ def main(cfg: DictConfig) -> None:
                     confidence = 70
                 else:
                     confidence = '60_50'
-                vital_word_count_dict[f'{pred_class}_{confidence}'].extend(vital_word_count)
+                #vital_word_count_dict_freq[f'{pred_class}_{confidence}'].extend(vital_word_count_freq)
+                vital_word_count_dict_freq[f'{pred_class}_{confidence}'] = vital_word_count_dict_freq.get(f'{pred_class}_{confidence}', []) + vital_word_count_freq
+                vital_word_count_dict_weight[f'{pred_class}_{confidence}'] = vital_word_count_dict_weight.get(f'{pred_class}_{confidence}', Counter()) + Counter(vital_word_count_weight)
 
             par_link = [template.format(f'./{key}.html', key) for key in table_of_contents.keys()]
             with open(os.path.join(save_dir, 'index.html'), 'w') as f:
@@ -238,15 +238,27 @@ def main(cfg: DictConfig) -> None:
                         f.write('<li>' + link + '</li>')
                     f.write('</ui>')
 
-            def list_to_csv(pred_class_confidence, vital_word_list):
-                df = pd.DataFrame([{'token': token, 'freq': freq} for token, freq in Counter(vital_word_list).most_common()])
-                df.to_csv(os.path.join(save_dir, f'csv/{pred_class_confidence}_vital_word_freq.csv'))
+            def list_to_csv(pred_class_confidence, vital_words, mode):
+                if mode=='freq':
+                    df = pd.DataFrame([{'token': token, 'freq': freq} for token, freq in Counter(vital_words).most_common()])
+                elif mode=='weight':
+                    df = pd.DataFrame.from_dict(vital_words, orient='index').reset_index().rename(columns={'index': 'token', 0: 'weight'}).sort_values(by='weight', ascending=False)
+                df.to_csv(os.path.join(save_dir, f'csv/{mode}/{pred_class_confidence}_vital_word_{mode}.csv'), index=False)
 
-            os.makedirs(os.path.join(save_dir, 'csv'), exist_ok=True)
+            os.makedirs(os.path.join(save_dir, 'csv/freq'), exist_ok=True)
             joblib.Parallel(n_jobs=4)(
                 joblib.delayed(list_to_csv)(
-                    *args
-                ) for args in tqdm(vital_word_count_dict.items(), desc='making vital_word_count.csv')
+                    *args,
+                    mode='freq'
+                ) for args in tqdm(vital_word_count_dict_freq.items(), desc='making vital_word_count_freq.csv')
+            )
+
+            os.makedirs(os.path.join(save_dir, 'csv/weight'), exist_ok=True)
+            joblib.Parallel(n_jobs=4)(
+                joblib.delayed(list_to_csv)(
+                    *args,
+                    mode='weight'
+                ) for args in tqdm(vital_word_count_dict_weight.items(), desc='making vital_word_count_weight.csv')
             )
 
         else:
