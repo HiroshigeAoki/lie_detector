@@ -15,8 +15,8 @@ args:
 plot_attention:
   word_cmap: "Blues"
   sent_cmap: "Reds"
-  word_color_level: 500
-  sent_color_level: 300
+  word_color_level: 200
+  sent_color_level: 100
   size: 3
   ignore_tokens: ['<PAD>', '<unk>', '▁', '。', '、']
   pad_token: '<PAD>'
