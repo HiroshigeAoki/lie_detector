@@ -41,6 +41,8 @@ class HANTokenizer():
             self.tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc")
         elif self.tokenizer_type == 'sp':
             self.tokenizer = SentencePieceTokenizer(model_file=model_file, do_lower_case=do_lower_case)
+        else:
+            raise ValueError(f'tokenizer_type: {self.tokenizer_type} is invalid.')
 
     def _mk_embedding_matrix(self) -> torch.tensor:
         sorted_stoi = dict(sorted(self.stoi.items(), key=lambda x: x[1]))
