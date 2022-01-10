@@ -7,5 +7,16 @@ args:
   vocab_size: 32000
   min_freq: 1
   embed_dim: 200
+  pad_index: 1
   tokenizer_type: 'mecab-wordpiece'
   cache_dir: model/
+
+plot_attention:
+  word_cmap: "Blues"
+  sent_cmap: "Reds"
+  word_color_level: 200
+  sent_color_level: 400
+  size: 3
+  ignore_tokens: ['<PAD>', '<unk>', '▁', '。', '、']
+  pad_token: '<PAD>'
+  n_gram: 'uni'
