@@ -17,6 +17,7 @@ from preprocess.custom_mecab_tagger import CustomMeCabTagger
 
 def extract(filePaths, save_dir, kwargs):
     """ファイルから必要なところを取り出してリストにまとめます"""
+    save_dir = save_dir
     nested_utterances = []
     labels = []
     users = []
@@ -45,6 +46,7 @@ def extract(filePaths, save_dir, kwargs):
     groups = [grouped.get_group(x) for x in grouped.groups]
 
     print('split data')
+    # train, valid, testに同じユーザが跨らないように分割
     i = 0
     train, train_size = [groups[i]], len(groups[i])
     while train_size < len(labels) * 0.8:
@@ -71,10 +73,21 @@ def extract(filePaths, save_dir, kwargs):
     X_valid, y_valid, users_valid = valid['nested_utterances'].tolist(), valid['labels'].tolist(), valid['users'].tolist()
     X_test, y_test, users_test = test['nested_utterances'].tolist(), test['labels'].tolist(), test['users'].tolist()
 
+    # 統計量計算
     train_stats, valid_stats, test_stats = Counter(y_train), Counter(y_valid), Counter(y_test)
     all_stats = train_stats + valid_stats + test_stats
-    pd.DataFrame((dict(train_stats), dict(valid_stats), dict(test_stats), dict(all_stats)), index=['train', 'valid', 'test', 'all']).to_csv(os.path.join(save_dir, 'raw_stats.csv'))
+    train_stats, valid_stats, test_stats, all_stats = dict(train_stats), dict(valid_stats), dict(test_stats), dict(all_stats)
 
+    train_stats.update({'users_num': len(Counter(users_train))})
+    valid_stats.update({'users_num': len(Counter(users_valid))})
+    test_stats.update({'users_num': len(Counter(users_test))})
+    all_stats.update({'users_num': len(Counter(users))})
+
+    stats_df = pd.DataFrame((train_stats, valid_stats, test_stats, all_stats), index=['train', 'valid', 'test', 'all'])
+    stats_df.to_csv(os.path.join(save_dir, 'raw_stats.csv'))
+    stats_df.to_latex(os.path.join(save_dir, 'raw_stats.tex'))
+
+    # sentence piece学習用
     train_for_tapt = []
     for train in X_train:
         train_for_tapt.extend(train)
@@ -85,7 +98,7 @@ def extract(filePaths, save_dir, kwargs):
     with open(f'{save_dir}/bbs.txt', 'w') as f: # for tapt pretraining of RoBERTa.
         for utterance in tqdm(bbs_data, desc="making bbs.txt"):
             f.write(utterance + '\n')
-
+    """
     tokenizer, path, _data = [], [], []
 
     tokenizer.append(CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc"))
@@ -103,23 +116,29 @@ def extract(filePaths, save_dir, kwargs):
             *args,
         ) for args in tqdm(list_args, desc='making split train data...')
     )
+    """
 
     print("duplicating werewolf dataset")
     X_train, y_train, users_train = duplicate_werewolves(X_train, y_train, users_train)
     X_valid, y_valid, users_valid = duplicate_werewolves(X_valid, y_valid, users_valid)
     X_test, y_test, users_test = duplicate_werewolves(X_test, y_test, users_test)
 
-    for _nested_utterances, _labels, _users, type in zip([X_train, X_valid, X_test], [y_train, y_valid, y_test], [users_train, users_valid, users_test], ['train', 'valid', 'test']):
-        X_dfs, num_utters = [], []
-        with trange(len(_nested_utterances), desc=f"pickling({type})...") as t:
-            for _, _utterances in zip(t, _nested_utterances):
-                X_df = pd.DataFrame({'raw_nested_utters': _utterances})
-                X_dfs.append(X_df)
-                num_utters.append(len(_utterances))
-        df = pd.DataFrame({'nested_utters': X_dfs, 'num_utters': num_utters, 'labels': _labels, 'users': _users})
+    save_to_pickle(X_train, y_train, users_train, 'train', save_dir)
+    save_to_pickle(X_valid, y_valid, users_valid, 'valid', save_dir)
+    save_to_pickle(X_test, y_test, users_test, 'test', save_dir)
 
-        with open(f'{save_dir}/{type}.pkl', 'wb') as f:
-            pickle.dump(df,  f, protocol=5)
+
+def save_to_pickle(X, y, users, name, save_dir):
+    X_dfs, num_utters = [], []
+    with trange(len(X), desc=f"pickling({name})...") as t:
+        for _, X in zip(t, X):
+            X_df = pd.DataFrame({'raw_nested_utters': X})
+            X_dfs.append(X_df)
+            num_utters.append(len(X))
+    df = pd.DataFrame({'nested_utters': X_dfs, 'num_utters': num_utters, 'labels': y, 'users': users})
+
+    with open(f'{save_dir}/{name}.pkl', 'wb') as f:
+        pickle.dump(df, f, protocol=5)
 
 
 def extract_loop(filePath, kwargs):
@@ -227,14 +246,14 @@ def make_split_train(tokenizer, path, data):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--save_dir", default='data/nested')
     parser.add_argument("--sample", action="store_true")
 
     args = parser.parse_args()
 
     files = sorted(glob.glob("../../corpus/BBSjsons/*/*.json"))  # 7249 files
 
-    # save_dir = f"data/nested"
-    save_dir = f"data/nested"
+    save_dir = args.save_dir
 
     if args.sample:
         files = files[:100]

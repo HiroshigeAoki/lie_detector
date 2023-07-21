@@ -5,7 +5,6 @@ from transformers import BertJapaneseTokenizer
 import argparse
 import os, sys
 sys.path.append('./src/')
-from utils.gmail_send import Gmailsender
 
 tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v2', additional_special_tokens=['<person>'])
 
@@ -69,8 +68,10 @@ def make_stats_table(train, valid, test):
 
 
 def main():
-    sender = Gmailsender()
-    data_dir = 'data/nested'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_dir', default='nested')
+    args = parser.parse_args()
+    data_dir = f'data/{args.data_dir}'
     train = pd.read_pickle(f'{data_dir}/train.pkl')
     valid = pd.read_pickle(f'{data_dir}/valid.pkl')
     test = pd.read_pickle(f'{data_dir}/test.pkl')
@@ -83,7 +84,6 @@ def main():
     stats_table = stats_table.to_latex()
     with open(f'{data_dir}/stats_mecab_wordpiece.tex', 'w') as f:
         f.write(stats_table)
-    sender.send('統計量計算完了')
 
 if __name__ == "__main__":
     main()

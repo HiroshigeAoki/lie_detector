@@ -9,6 +9,11 @@ from utils.gmail_send import Gmailsender
 
 
 def main(args):
+    save_dir = os.path.join(args.save_dir, f'{args.tokenizer}_vectors/dim_{args.dim}')
+    print(save_dir)
+    shutil.rmtree(save_dir, ignore_errors=True)
+    os.makedirs(save_dir, exist_ok=True)
+
     model = fasttext.train_unsupervised(
         os.path.join(args.input_dir, f'split-train-{args.tokenizer}.txt'),
         model='skipgram',
@@ -16,9 +21,6 @@ def main(args):
         minCount=1
     )
 
-    save_dir = os.path.join(args.save_dir, f'{args.tokenizer}_vectors/dim_{args.dim}')
-    shutil.rmtree(save_dir, ignore_errors=True)
-    os.makedirs(save_dir, exist_ok=True)
     model.save_model(os.path.join(save_dir, "model_fasttext.bin"))
 
     model = gensim_fasttext.load_facebook_vectors(os.path.join(save_dir, "model_fasttext.bin"))
@@ -38,6 +40,6 @@ if __name__ == "__main__":
     parser.add_argument("--dim", type=int, default=200)
     parser.add_argument("--input_dir", type=str, default='data/nested')
     parser.add_argument("--save_dir", type=str, default='model')
-    parser.add_argument("--tokenizer", type=str, default='mecab-wordpiece')
+    parser.add_argument("--tokenizer", type=str, default='sp')
     args = parser.parse_args()
     main(args)

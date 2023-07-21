@@ -30,11 +30,9 @@ class CreateHANDataset(Dataset):
 
 
 class CreateHANDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir: str, tokenizer: HANTokenizer, batch_size: int):
+    def __init__(self, data_dir: str, tokenizer: HANTokenizer, batch_size: int, mode: str):
         super().__init__()
-        self.train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
-        self.valid_df = pd.read_pickle(os.path.join(data_dir, "valid.pkl"))
-        self.test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
+        self.data_dir = data_dir
         self.batch_size = batch_size
         self.tokenizer = tokenizer
         self.n_cpus = os.cpu_count()
@@ -42,11 +40,11 @@ class CreateHANDataModule(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         # set train and valid dataset
         if stage == 'fit':
-            self.train_ds = CreateHANDataset(self.train_df, self.batch_size, self.tokenizer)
-            self.valid_ds = CreateHANDataset(self.valid_df, self.batch_size, self.tokenizer)
+            self.train_ds = CreateHANDataset(pd.read_pickle(os.path.join(self.data_dir, "train.pkl")), self.batch_size, self.tokenizer)
+            self.valid_ds = CreateHANDataset(pd.read_pickle(os.path.join(self.data_dir, "valid.pkl")), self.batch_size, self.tokenizer)
         # set test dataset
         if stage == 'test' or stage == 'predict' or stage is None:
-            self.test_ds = CreateHANDataset(self.test_df, self.batch_size, self.tokenizer)
+            self.test_ds = CreateHANDataset(pd.read_pickle(os.path.join(self.data_dir, "test.pkl")), self.batch_size, self.tokenizer)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.train_ds, batch_size=self.batch_size,
