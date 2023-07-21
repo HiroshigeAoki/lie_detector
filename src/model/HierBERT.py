@@ -10,8 +10,6 @@ from transformers import BertModel, BertJapaneseTokenizer, BertConfig
 from transformers.models.bert.modeling_bert import BertPreTrainedModel
 import hydra
 
-from src.utils.gen_assertion import gen_torch_tensor_shape_assertion
-
 class HierchicalBERT(pl.LightningModule):
     def __init__(
         self,
@@ -73,7 +71,6 @@ class HierchicalBERT(pl.LightningModule):
             pooled_output_word_level.append(outputs['pooled_output'])
             if self.hparams.output_attentions:
                 word_attentions.append(outputs['attentions'])
-
         inputs_embeds = torch.stack(pooled_output_word_level).permute(1, 0, 2)
         outputs = self.sent_level_bert(inputs_embeds=inputs_embeds, pad_sent_num=pad_sent_num)
         loss, logits = self.classifier(outputs['pooled_output'], labels)
@@ -121,14 +118,19 @@ class HierchicalBERT(pl.LightningModule):
         self.log_dict(output)
 
     def test_epoch_end(self, outputs):
-        logits = torch.cat([x['batch_preds'] for x in outputs])
-        labels = torch.cat([x['batch_labels'] for x in outputs])
-        epoch_loss = self.loss_fct(logits, labels)
         from sklearn.metrics import precision_recall_fscore_support
         import numpy as np
+
+        logits = torch.cat([x['batch_preds'] for x in outputs])
+        labels = torch.cat([x['batch_labels'] for x in outputs])
+
+        epoch_loss = self.loss_fct(logits, labels)
+
         num_correct = (logits.argmax(dim=1) == labels).sum().item()
         epoch_accuracy = num_correct / len(labels)
+
         self.log("test_accuracy", epoch_accuracy, logger=True)
+
         cm = ConfusionMatrix(num_classes=2)
         df_cm = pd.DataFrame(cm(logits.argmax(dim=1).cpu(), labels.cpu()).numpy())
         self.print(f"confusion_matrix\n{df_cm.to_string()}\n")
@@ -138,25 +140,12 @@ class HierchicalBERT(pl.LightningModule):
         self.print(f"f1_precision_accuracy\n{scores_df.to_string()}")
         return {'loss': epoch_loss, 'epoch_preds': logits, 'labels': labels}
 
-    """
-    def test_epoch_end(self, outputs):
-        logits = torch.cat([x['batch_preds'] for x in outputs])
-        labels = torch.cat([x['batch_labels'] for x in outputs])
-        epoch_loss = self.loss_fct(logits, labels)
-        self.log("test_loss", epoch_loss, logger=True)
-        cm = self.cm.compute()
-        test_metrix = self.test_metrics.compute()
-        self.log("ConfusionMatrix", cm, logger=True)
-        self.log_dict(test_metrix, logger=True)
-        pd.DataFrame(cm.cpu().numpy()).to_csv(f'{self.logger.log_dir}/confusionmatrix.csv')
-        pd.DataFrame([metrix.cpu().numpy() for metrix in test_metrix.values()], index=test_metrix.keys()).to_csv(f'{self.logger.log_dir}/scores.csv')
-    """
     def predict_step(self, batch, batch_idx: int):
         outputs = self(**batch)
         return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
 
     def configure_optimizers(self):
-        return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
+        return hydra.utils.instantiate(self.hparams.optim.args, params=self.parameters())
 
 
 class BERTWordLevel(pl.LightningModule):
@@ -180,7 +169,6 @@ class BERTWordLevel(pl.LightningModule):
         # won't update word level bert layers
         for param in self.bert.parameters():
             param.requires_grad = False
-
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         last_hidden_state, pooled_output, attentions = self.bert(input_ids, attention_mask, output_attentions=self.hparams.output_attentions).values()

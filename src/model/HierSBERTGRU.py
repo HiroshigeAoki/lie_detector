@@ -1,5 +1,6 @@
 from typing import Tuple
 from omegaconf import DictConfig
+from omegaconf.omegaconf import OmegaConf
 import torch
 from torch import nn
 import pandas as pd
@@ -7,68 +8,58 @@ import pytorch_lightning as pl
 from torch.nn.modules.loss import CrossEntropyLoss
 import torch.nn.functional as F
 from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1, ConfusionMatrix
-from transformers import BertModel, BertJapaneseTokenizer, BertConfig, AutoModel
-from sentence_transformers import SentenceTransformer
+from transformers import AutoModel
 import hydra
-import sys, os
-sys.path.append(os.pardir)
-from src.model.HAN import SentAttnNet
 
-class HierSBERTGRU(pl.LightningModule):
+class HierarchicalSBERTGRU(pl.LightningModule):
     def __init__(
         self,
         num_labels: int,
-        optim,
         pretrained_model: str,
-        sent_level_BERT_config: BertConfig,
-        output_attentions: bool,
-        use_ave_pooled_output: bool,
-        # TODO: dropout率については、後で考える。
+        sent_level_config: DictConfig,
+        classifer_config: DictConfig,
+        optim: DictConfig,
         ):
-        super(HierSBERTGRU, self).__init__()
+        super(HierarchicalSBERTGRU, self).__init__()
         self.save_hyperparameters()
 
-        if isinstance(sent_level_BERT_config, DictConfig):
-            sent_level_BERT_config = hydra.utils.instantiate(sent_level_BERT_config)
-
-        self.sent_embedder = SentenceEmbedder(
+        self.word_level_sbert = SentenceEmbedder(
             pretrained_model=pretrained_model,
         )
 
-        self.sent_level = SentAttnNet(
-            word_hidden_dim=32,
-            sent_hidden_dim=32,
-            weight_drop=0.0,
+        self.sent_level_bigru = hydra.utils.instantiate(
+            sent_level_config,
+            num_labels=num_labels,
         )
 
         self.classifier = Classifier(
-            num_labels=num_labels,
+            **OmegaConf.to_container(classifer_config),
         )
 
         self.loss_fct = CrossEntropyLoss()
 
         metrics = MetricCollection([
-            Accuracy(num_classes=2, average='macro'),
-            Precision(num_classes=2, average='macro'),
-            Recall(num_classes=2, average='macro'),
-            F1(num_classes=2, average='macro')
+            Accuracy(num_classes=num_labels, average='macro'),
+            Precision(num_classes=num_labels, average='macro'),
+            Recall(num_classes=num_labels, average='macro'),
+            F1(num_classes=num_labels, average='macro')
         ])
 
         self.train_metrics = metrics.clone(prefix='train_')
         self.valid_metrics = metrics.clone(prefix='valid_')
         self.test_metrics = metrics.clone(prefix='test_')
 
-        self.cm = ConfusionMatrix(num_classes=2, compute_on_step=False)
+        self.cm = ConfusionMatrix(num_classes=num_labels, compute_on_step=False)
 
     def forward(self, input_ids: torch.FloatTensor, attention_mask: torch.LongTensor, pad_sent_num: torch.tensor, labels: torch.tensor):
         input_ids = input_ids.permute(1,0,2)
         attention_mask = attention_mask.permute(1,0,2)
         sent_embeddings = []
         for _input_ids, _attention_mask in zip(input_ids, attention_mask):
-            sent_embeddings.append(self.sent_embedder(input_ids=_input_ids, attention_mask=_attention_mask))
+            sent_embeddings.append(self.word_level_sbert(input_ids=_input_ids, attention_mask=_attention_mask))
         # TODO: input_embedをdebugする。
         input_embeds = torch.stack(sent_embeddings).permute(1, 0, 2)
-        sent_attentions, sent_embeddings = self.sent_level(inputs_embeds=input_embeds, pad_sent_num=pad_sent_num)
+        sent_attentions, sent_embeddings = self.sent_level_bigru(inputs_embeds=input_embeds, pad_sent_num=pad_sent_num)
         loss, logits = self.classifier(sent_embeddings, labels)
         return dict(loss=loss, logits=logits, sent_attentions=sent_attentions)
 
@@ -134,8 +125,7 @@ class HierSBERTGRU(pl.LightningModule):
         return dict(loss=outputs['loss'], logits=outputs['logits'], word_attentions=outputs['word_attentions'], sent_attentions=outputs['sent_attentions'], input_ids=batch['input_ids'], labels=batch['labels'])
 
     def configure_optimizers(self):
-        return hydra.utils.instantiate(self.hparams.optim.optimizer, params=self.parameters())
-
+        return hydra.utils.instantiate(self.hparams.optim.args, params=self.parameters())
 
 class SentenceEmbedder(pl.LightningModule):
     def __init__(self,
@@ -178,7 +168,3 @@ def mean_pooling(model_output, attention_mask):
     token_embeddings = model_output[0] #First element of model_output contains all token embeddings
     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-
-
-def average_attention(attentions):
-    return torch.stack(attentions).mean(3).mean(2).mean(0)

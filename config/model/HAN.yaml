@@ -7,8 +7,8 @@ args:
   locked_drop: 0.0
   embed_drop: 0.0
   last_drop: 0.0
-  word_hidden_dim: 100
-  sent_hidden_dim: 100
+  word_hidden_dim: 200
+  sent_hidden_dim: 200
   padding_idx: 1
   num_class: 2
 
