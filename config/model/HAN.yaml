@@ -1,15 +1,21 @@
-name: HAN
+name: HANA
 
 args:
-  _target_: src.model.HAN.HierAttnNet
-  vocab_size: 32000
-  weight_drop: 0.0
-  locked_drop: 0.0
-  embed_drop: 0.0
+  _target_: src.model.HANA.HierAttnNet
+  wordattennet_params:
+    vocab_size: 32000
+    hidden_dim: 200
+    padding_idx: 1
+    weight_drop: 0.0
+    locked_drop: 0.0
+    embed_drop: 0.0
+  sentattennet_params:
+    word_hidden_dim: ${..wordattennet_params.hidden_dim}
+    sent_hidden_dim: 200
+    weight_drop: 0.0
+  word_hidden_dim: ${.wordattennet_params.hidden_dim}
+  sent_hidden_dim: ${.sentattennet_params.sent_hidden_dim}
   last_drop: 0.0
-  word_hidden_dim: 200
-  sent_hidden_dim: 200
-  padding_idx: 1
   num_class: 2
 
 data_module:
