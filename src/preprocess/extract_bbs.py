@@ -14,30 +14,16 @@ from utils.logger import OperationEndNotifier
 import traceback
 
 
-
 class DataProcessor:
-
     def __init__(self, save_dir, bbs_dir='../../corpus/BBSjsons',
-                 role2label={"人狼": 1, "狂人": 1, "村人": 0, "占い師": 0, "霊能者": 0, "狩人": 0, "共有者": 0, "ハムスター人間": 0},
-                 used_role=["人狼", "狂人", "村人", "占い師", "霊能者", "狩人"],
-                 min_len_char=10,
-                 min_num_utter=10,
-                 train_valid_test_ratio=[0.8, 0.1, 0.1],
                  BBS_model_path='../../corpus/dataset_for_fine-tuning/categorized_level-0_with_others/254-model-epoch-3',
                  BBS_tokenizer_path='itsunoda/wolfbbsRoBERTa-small',
                  num_cpus=4,
-                 save_format='parquet',
                  sample=False):
         
         self.save_dir = save_dir
         self.bbs_dir = bbs_dir
-        self.role2label = role2label
-        self.used_role = used_role
-        self.min_len_char = min_len_char
-        self.min_num_utter = min_num_utter
-        self.train_valid_test_ratio = train_valid_test_ratio
         self.num_cpus = num_cpus
-        self.save_format = save_format
         
         self.sample = sample
         
@@ -62,62 +48,109 @@ class DataProcessor:
         self.BBS_tokenizer_path = BBS_tokenizer_path
 
 
-    def save_to_pickle(self, X, y, users, name):
-        X_dfs, num_utters = [], []
-        with trange(len(X), desc=f"pickling({name})...") as t:
-            for _, X in zip(t, X):
-                X_df = pd.DataFrame({'raw_nested_utters': X})
-                X_dfs.append(X_df)
-                num_utters.append(len(X))
-        df = pd.DataFrame({'nested_utters': X_dfs, 'num_utters': num_utters, 'labels': y, 'users': users})
-        
-        with open(f'{self.save_dir}/{name}.pkl', 'wb') as f:
-            pickle.dump(df, f, protocol=5)
+    def save_to_pickle(self, raw_nested_utters, labels, users, mode):
+        try:
+            self.logger.debug(f"raw_nested_utters: {raw_nested_utters[:5]}")
+            self.logger.debug(f"labels: {labels[:5]}")
+            self.logger.debug(f"users: {users[:5]}")
             
+            num_utters = []
+            with trange(len(raw_nested_utters), desc=f"pickling({mode})...") as t:
+                for _, raw_nested_utter in zip(t, raw_nested_utters):
+                    num_utters.append(len(raw_nested_utter))
+            df = pd.DataFrame({'nested_utters': raw_nested_utters, 'num_utters': num_utters, 'labels': labels, 'users': users})
+            
+            with open(f'{self.save_dir}/{mode}.pkl', 'wb') as f:
+                pickle.dump(df, f, protocol=5)
+        except Exception as e:
+            self.logger.error(f"Error in save_to_pickle: {e}")
+            self.notifier.notify(operation=f'save_to_pickle({mode})', status='failed', message=str(traceback.format_exc()))
+            raise
     
-    def exclude_werewolf_specific_utterances(self, df: pd.DataFrame, mode: str):
-        total_rows = len(df)
-        num_batches = self.num_cpus  # 例としてCPU数をバッチ数としています。
-        self.logger.info(f"Splitting {total_rows} rows of DataFrame into {num_batches} batches for mode: {mode}")
 
-        df_split = np.array_split(df, num_batches)
+    def exclude_werewolf_specific_utterances(self, df: pd.DataFrame, mode: str) -> pd.DataFrame:
+        try:
+            # Check if df is None or empty
+            assert df is not None, "DataFrame df is None."
+            assert not df.empty, "DataFrame df is empty."
 
-        # 各バッチにmodeを追加
-        batch_with_mode = [(index, batch, mode) for index, batch in enumerate(df_split)]
+            total_rows = len(df)
+            num_batches = self.num_cpus 
+            self.logger.info(f"- {mode} - Splitting {total_rows} rows of DataFrame into {num_batches} batches ")
 
-        with Pool(processes=self.num_cpus) as pool:
-            self.logger.info(f"Initiating multiprocessing with {self.num_cpus} CPUs for mode: {mode}")
-            results = pool.starmap(self.process_batch, batch_with_mode)
+            df_split = np.array_split(df, num_batches)
+            
+            # Check if df_split is valid
+            assert all(isinstance(batch, pd.DataFrame) for batch in df_split), "df_split contains non-DataFrame elements."
+            assert all(not batch.empty for batch in df_split), "df_split contains empty DataFrame."
 
-        self.logger.info(f"Completed multiprocessing for mode: {mode}. Now sorting and concatenating batches.")
-        results.sort(key=lambda x: x[0])  # インデックスでソート
-        sorted_dfs = [batch for index, batch in results]  # ソートされたDataFrameのリスト
-        self.logger.info(f"Successfully sorted and concatenated {num_batches} batches for mode: {mode}")
-        return pd.concat(sorted_dfs, ignore_index=True)
+            batch_with_mode = [(index, batch, mode) for index, batch in enumerate(df_split)]
+            
+            with Pool(processes=self.num_cpus) as pool:
+                results = pool.starmap(self.process_batch, batch_with_mode)
+            
+            # Check if results are valid
+            assert results is not None, "Results from pool.starmap is None."
+            assert all(isinstance(result, tuple) for result in results), "Results contain non-tuple elements."
+
+            results.sort(key=lambda x: x[0])
+
+            # Check if sorted results are valid
+            assert all(isinstance(batch, pd.DataFrame) for index, batch in results), "Sorted results contain non-DataFrame elements."
+
+            sorted_dfs = [batch for index, batch in results]
+
+            # Check if sorted_dfs are valid
+            assert all(isinstance(batch, pd.DataFrame) for batch in sorted_dfs), "sorted_dfs contains non-DataFrame elements."
+
+            final_df = pd.concat(sorted_dfs, ignore_index=True)
+            
+            # Check if the final DataFrame is valid
+            assert final_df is not None, "Final DataFrame is None."
+            assert not final_df.empty, "Final DataFrame is empty."
+            expected_columns = [ "nested_utters", "num_utters", "labels", "users"]
+            for col in expected_columns:
+                assert col in final_df.columns, f"Final DataFrame is missing expected column {col}"
+
+            return final_df
+       
+        except Exception as e:
+            self.logger.error(f"Error in exclude_werewolf_specific_utterances: {e}")
+            raise
 
 
     def process_batch(self, index, batch_df, mode):
-        num_rows = len(batch_df)
-        self.logger.info(f"Starting to process batch {index} containing {num_rows} rows for mode: {mode}")
+        try:
+            batch_size = len(batch_df)
+            self.logger.info(f"- {mode} - Starting to process batch {index} with {batch_size} rows")
 
-        # Initialize tokenizer and model for each batch here
-        self.logger.info(f"Initializing BBS tokenizer and model for batch {index} for mode: {mode}")
-        BBStokenizer = AutoTokenizer.from_pretrained(self.BBS_tokenizer_path)
-        BBSmodel = RobertaForSequenceClassification.from_pretrained(self.BBS_model_path)
-        self.logger.info(f"Successfully initialized BBS tokenizer and model for batch {index} for mode: {mode}")
+            try:
+                # Initialize tokenizer and model for each batch here
+                self.logger.info(f"- {mode} - Loading BBS tokenizer and model for batch {index}")
+                BBStokenizer = AutoTokenizer.from_pretrained(self.BBS_tokenizer_path)
+                BBSmodel = RobertaForSequenceClassification.from_pretrained(self.BBS_model_path)
+                self.logger.info(f"- {mode} - Loaded BBS tokenizer and model for batch {index}")
+            except Exception as e:
+                self.logger.error(f"Failed to load BBS tokenizer and model: {e}")
+                raise
 
-        # Initialize a counter to keep track of the number of rows processed
-        rows_processed = 0
+            for row in batch_df.itertuples():
+                try:
+                    nested_utters = row.nested_utters
+                    nested_utters = self._exclude_werewolf_specific_utterances(nested_utters['raw_nested_utters'].tolist(), BBStokenizer, BBSmodel)
+                    batch_df.at[row.Index, 'nested_utters'] = pd.DataFrame(nested_utters, columns=['raw_nested_utters'])
+                    self.logger.info(f"- {mode} - Processed row {row.Index + 1} in batch {index}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to process row {row.Index + 1} in batch {index}: {e}")
 
-        for row in batch_df.itertuples():
-            nested_utters = row.nested_utters
-            nested_utters = self._exclude_werewolf_specific_utterances(nested_utters['raw_nested_utters'].tolist(), BBStokenizer, BBSmodel)
-            batch_df.at[row.Index, 'nested_utters'] = pd.DataFrame(nested_utters, columns=['raw_nested_utters'])
-            rows_processed += 1
-            self.logger.info(f"Processed {rows_processed}/{num_rows} rows in batch {index} for mode: {mode}")
+            self.logger.info(f"- {mode} - Finished processing batch {index}")
+            
+            return index, batch_df
 
-        self.logger.info(f"Finished processing all {num_rows} rows in batch {index} for mode: {mode}")
-        return index, batch_df  # インデックスと処理済みのDataFrameをタプルで返却
+        except Exception as e:
+            self.logger.error(f"Failed to process batch {index} in {mode}: {e}")
+            self.notifier.notify(operation=f'batch {index} processing in {mode}', status='failed', message=str(e))
+            raise
 
 
     def _exclude_werewolf_specific_utterances(self, nested_utterances: list, BBStokenizer, BBSmodel):
@@ -150,46 +183,54 @@ class DataProcessor:
         return utters
     
 
-    def run(self):
+    def run(self, data_dir='data/nested'):
         if self.sample:
-            data_dir = './data/nested_sample'
+            data_dir = 'data/nested_sample'
+            limit_row = 100
         else:
-            data_dir = './data/nested'
+            data_dir = data_dir
         
         try:
             for mode in ['train', 'valid', 'test']:
-                self.logger.info(f"Started pricessing {mode} df")
-                df = pd.read_pickle(os.path.join(data_dir, f'{mode}.pkl'))
+                self.logger.info(f"Started processing {mode} df")
+                try:
+                    df = pd.read_pickle(os.path.join(data_dir, f'{mode}.pkl'))
+                    if self.sample:
+                        df = df[:limit_row]
+                except Exception as e:
+                    self.logger.error(f"Failed to read {mode} DataFrame: {e}")
+                    continue
                 self.logger.debug(df.head())
-                self.exclude_werewolf_specific_utterances(df, mode)
+                df = self.exclude_werewolf_specific_utterances(df, mode)
                 self.logger.debug(f"{df.head()}")
                 self.logger.debug(f"{df['nested_utters'].apply(lambda x: len(x)).describe()}")
                 self.logger.debug(f"{df.iloc[0]['nested_utters'][:5]}")
                 self.save_to_pickle(df.nested_utters, df.labels, df.users, mode)
         except Exception as e:
-            self.logger.error(traceback.format_exc())
-            self.notifier.notify(operation='extract_bbs.py', status='failed', message=traceback.format_exc())
+            self.logger.error(f"Error in run: {e}")
+            self.notifier.notify(operation='extract_bbs.py', status='failed', message=str(e))
             return
-        self.logger.info('done!')
-        self.notifier.notify(operation='extract_bbs.py', status='done', message='done!')
         
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_cpus", default=4)
+    parser.add_argument("--num_cpus", default=3)
     parser.add_argument("--sample", action='store_true')
+    parser.add_argument("--data_dir", default='nested')
     args = parser.parse_args()
     
     if args.sample:
         save_dir = 'data/exclude_bbs_nested_sample'
     else:
-        save_dir = 'data/exclude_bbs_nested'
+        save_dir = f'data/exclude_bbs_{args.data_dir}'
+        
+    data_dir = f'data/{args.data_dir}'
     
     os.makedirs(save_dir, exist_ok=True)
 
     BBS_model_path = '/home/haoki/Documents/vscode-workplaces/sotuken/corpus/dataset_for_fine-tuning/categorized_level-0_with_others/254-model-epoch-3/'
 
-    num_cpus = os.cpu_count() if int(args.num_cpus)==-1 else int(args.num_cpus)
+    num_cpus = int(args.num_cpus)
 
-    processor = DataProcessor(save_dir=save_dir, BBS_model_path=BBS_model_path, save_format='pickle', num_cpus=num_cpus, sample=args.sample)
-    processor.run()
+    processor = DataProcessor(save_dir=save_dir, BBS_model_path=BBS_model_path, num_cpus=num_cpus, sample=args.sample)
+    processor.run(data_dir=data_dir)
