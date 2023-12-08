@@ -1,0 +1,4 @@
+name: exclude_bbs_nested_day
+
+dir: data/exclude_bbs_nested_day
+data_type: flat
