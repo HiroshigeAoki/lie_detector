@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 
-def make_limit_data(data_dir, save_dir, num_train):
+def under_sampling(data_dir, save_dir, num_train):
     num_vaild = num_train // 10
     num_test = num_train // 10
     train = pd.read_pickle(f"{data_dir}/train.pkl")
@@ -36,8 +36,7 @@ def main():
     data_dir = f"data/{args.data_dir}"
     save_dir = f"data/{args.data_dir}_{args.num_train}"
     os.makedirs(save_dir, exist_ok=True)
-    num_train = args.num_train
-    make_limit_data(data_dir, save_dir, num_train)
+    under_sampling(data_dir, save_dir, int(args.num_train))
 
 if __name__ == "__main__":
     main()

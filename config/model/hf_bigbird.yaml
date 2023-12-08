@@ -1,0 +1,9 @@
+name: hf_bigbird
+
+args:
+  _target_: src.model.HFModel.HFModel
+  pretrained_model_name_or_path: nlp-waseda/bigbird-base-japanese
+
+data_module:
+  _target_: src.datamodule.HFModelDataModule.CreateHFModelDataModule
+  batch_size: 4

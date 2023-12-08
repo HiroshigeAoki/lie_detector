@@ -1,0 +1,7 @@
+name: hf_bigbird
+
+args:
+  _target_: src.tokenizer.HFTokenizer.HFTokenizer
+  pretrained_model_name_or_path: nlp-waseda/bigbird-base-japanese
+  additional_special_tokens: ['<person>']
+  max_length: 4096
