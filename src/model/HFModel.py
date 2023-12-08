@@ -18,6 +18,7 @@ class HFModel(AbstractModel):
         self.save_hyperparameters()
     
         self.model = AutoModel.from_pretrained(pretrained_model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path)
         self.fn = nn.Linear(self.model.config.hidden_size, 2)
         self.criterion = nn.CrossEntropyLoss()
         
@@ -46,3 +47,17 @@ class HFModel(AbstractModel):
         if labels is not None:
             loss = self.criterion(preds, labels)
         return dict(loss=loss, preds=preds, attentions=outputs.attentions)
+
+
+    def training_step(self, batch, batch_idx):
+        outputs = self(**batch)
+        loss = outputs['loss']
+        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+
+        if batch_idx % 100 == 0:
+            preds = torch.argmax(outputs['preds'], dim=1)
+            for i in range(len(batch['input_ids'])):
+                sample_text = self.tokenizer.decode(batch['input_ids'][i], skip_special_tokens=True)
+                self.logger.experiment.add_text(f"sample_{i}", f"Text: {sample_text}\nLabel: {batch['labels'][i]}\nPrediction: {preds[i]}", self.current_epoch)
+
+        return dict(loss=outputs['loss'], batch_preds=outputs['preds'], batch_labels=batch['labels'])
