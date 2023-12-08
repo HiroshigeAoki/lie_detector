@@ -3,14 +3,14 @@ from torch import nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
-from src.model.regularize import embedded_dropout, WeightDrop, LockedDropout
-from src.model.AbstractHierAttnNet import AbstractHierAttnNet
+from src.model.hierarchical.regularize import embedded_dropout, WeightDrop, LockedDropout
+from src.model.hierarchical.AbstractHierModel import AbstractHierModel
 
 """hierarchical attention network"""
-class HierAttnNet(AbstractHierAttnNet):
-    def __init__(self, wordattennet_params: dict, sentattennet_params: dict, optim: dict,
-                 embedding_matrix, last_drop: float, word_hidden_dim: int, sent_hidden_dim: int, num_class: int):
-        super().__init__(optim=optim)
+class HierAttnNet(AbstractHierModel):
+    def __init__(self, wordattennet_params: dict, sentattennet_params: dict,
+                 embedding_matrix, last_drop: float, word_hidden_dim: int, sent_hidden_dim: int, num_class: int, **kwargs):
+        super().__init__(**kwargs)
         self.save_hyperparameters()
         
         self.build_wordattennet(**wordattennet_params, embedding_matrix=embedding_matrix)
@@ -20,23 +20,21 @@ class HierAttnNet(AbstractHierAttnNet):
         self.fc = nn.Linear(sent_hidden_dim * 2, num_class)
         self.criterion = nn.CrossEntropyLoss()
 
-
     def build_wordattennet(self, *args, **kwargs):
         self.wordattnnet = WordAttnNet(*args, **kwargs)
         
     def build_sentattennet(self, *args, **kwargs):
         self.sentattennet = SentAttnNet(*args, **kwargs)
 
-    def forward(self, X, y, attention_mask, pad_sent_num):
-        x = X.permute(1, 0, 2) # X: (batch_size, doc_len, sent_len) -> x: (doc_len, bsz, sent_len)
+    def forward(self, nested_utters, labels, attention_mask, pad_sent_num, **kwargs):
+        x = nested_utters.permute(1, 0, 2) # X: (batch_size, doc_len, sent_len) -> x: (doc_len, bsz, sent_len)
         attention_mask = attention_mask.permute(1, 0, 2)
         attention_mask = attention_mask == 0
-        word_h_n = torch.zeros(2, X.shape[0], self.hparams.word_hidden_dim, device=self.device)
+        word_h_n = torch.zeros(2, nested_utters.shape[0], self.hparams.word_hidden_dim, device=self.device)
 
         #alpha and s Tensor List
         word_a_list, word_s_list = [], []
         for sent, _attention_mask in zip(x, attention_mask): # sent: (bsz, sent_len)
-            _attention_mask = _attention_mask
             word_a, word_s, word_h_n = self.wordattnnet(sent, word_h_n, _attention_mask)
             word_a_list.append(word_a)
             word_s_list.append(word_s)
@@ -56,8 +54,8 @@ class HierAttnNet(AbstractHierAttnNet):
         self.doc_a = doc_a.permute(0, 2, 1)
         doc_s = self.last_drop(doc_s)
         preds = self.fc(doc_s) # (bsz, class_num)
-        loss = self.criterion(preds, y)
-        return dict(loss=loss, preds=preds, word_attentions=self.sent_a, sent_attentions=self.doc_a)
+        loss = self.criterion(preds, labels)
+        return dict(loss=loss, preds=preds, word_attentions=self.sent_a, sent_attentions=self.doc_a, **kwargs)
 
 
 class WordAttnNet(pl.LightningModule):
@@ -135,7 +133,6 @@ class SentAttnNet(pl.LightningModule):
 
         self.sent_attn = AttentionWithContext(sent_hidden_dim * 2)
 
-
     def forward(self, X, attention_mask): #will receive a tensor of dim(bsz, doc_len, word_hidden_dim * 2)
         X = X.masked_fill(attention_mask, 0)
         h_t, h_n = self.rnn(X)
@@ -151,7 +148,6 @@ class AttentionWithContext(pl.LightningModule):
 
         self.atten = nn.Linear(hidden_dim, hidden_dim)
         self.contx = nn.Linear(hidden_dim, 1, bias=False)
-
 
     def forward(self, h_t, attention_mask):
         """caliculate the sentence vector s which is the weighted sum of word hidden states inp

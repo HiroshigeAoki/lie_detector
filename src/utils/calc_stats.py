@@ -1,12 +1,13 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from pandarallel import pandarallel
 from transformers import BertJapaneseTokenizer
 import argparse
-import os, sys
+import sys
 sys.path.append('./src/')
 
-tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v2', additional_special_tokens=['<person>'])
+tokenizer = BertJapaneseTokenizer.from_pretrained('ku-nlp/deberta-v2-large-japanese-char-wwm', additional_special_tokens=['<person>'])
 
 def feature_counter(nested_df):
     pandarallel.initialize()
@@ -67,6 +68,34 @@ def make_stats_table(train, valid, test):
     return stats_table
 
 
+def create_histogram(df, feature_col, title, filename):
+    plt.figure()
+    plt.hist(df[feature_col], bins=20, edgecolor='black')
+    plt.title(title)
+    plt.xlabel(feature_col)
+    plt.ylabel('Frequency')
+    
+    # 四分位数を計算
+    q1 = df[feature_col].quantile(0.25)
+    median = df[feature_col].quantile(0.5)
+    q3 = df[feature_col].quantile(0.75)
+    
+    # 平均を計算
+    mean = df[feature_col].mean()
+    
+    # 四分位数を赤線でプロット
+    plt.axvline(q1, color='r', linestyle='--', label=f'Q1: {q1:.2f}')
+    plt.axvline(median, color='r', linestyle='-', label=f'Median: {median:.2f}')
+    plt.axvline(q3, color='r', linestyle='--', label=f'Q3: {q3:.2f}')
+    
+    # 平均を黄色線でプロット
+    plt.axvline(mean, color='y', linestyle='-', label=f'Mean: {mean:.2f}')
+    
+    plt.legend()  # 凡例を表示
+    plt.savefig(filename)  # 画像として保存
+
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', default='nested')
@@ -79,6 +108,17 @@ def main():
     train = feature_counter(train)
     valid = feature_counter(valid)
     test = feature_counter(test)
+    
+    # 発話数に関するヒストグラムの作成と保存
+    create_histogram(train, 'num_utters', 'Train Utterances Histogram', f'{data_dir}/train_utterances_histogram.png')
+    create_histogram(valid, 'num_utters', 'Valid Utterances Histogram', f'{data_dir}/valid_utterances_histogram.png')
+    create_histogram(test, 'num_utters', 'Test Utterances Histogram', f'{data_dir}/test_utterances_histogram.png')
+
+    # サブワード数に関するヒストグラムの作成と保存
+    create_histogram(train, 'num_subwords_sum', 'Train Subwords Histogram', f'{data_dir}/train_subwords_histogram.png')
+    create_histogram(valid, 'num_subwords_sum', 'Valid Subwords Histogram', f'{data_dir}/valid_subwords_histogram.png')
+    create_histogram(test, 'num_subwords_sum', 'Test Subwords Histogram', f'{data_dir}/test_subwords_histogram.png')
+
 
     stats_table = make_stats_table(train, valid, test)
     stats_table = stats_table.to_latex()

@@ -5,7 +5,7 @@ import torch
 from torchtext.vocab import Vectors
 import os, sys
 from transformers import BertJapaneseTokenizer
-from src.preprocess.custom_mecab_tagger import CustomMeCabTagger
+# from src.preprocess.custom_mecab_tagger import CustomMeCabTagger
 from src.preprocess.custom_vocab_func import build_vocab_from_training_data
 from src.tokenizer.SPTokenizer import SentencePieceTokenizer
 
@@ -37,8 +37,8 @@ class HANTokenizer():
 
         if self.tokenizer_type == 'mecab-wordpiece':
             self.tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>'])
-        elif self.tokenizer_type == 'mecab':
-            self.tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc")
+#        elif self.tokenizer_type == 'mecab':
+#            self.tokenizer = CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc")
         elif self.tokenizer_type == 'sp':
             self.tokenizer = SentencePieceTokenizer(model_file=model_file, do_lower_case=do_lower_case)
         else:
@@ -58,7 +58,7 @@ class HANTokenizer():
     def numericalize(self, utter: list[str]) -> list[int]:
         return self.vocab.lookup_indices(list(utter))
 
-    def padding_word_level(self, utter: list[int]) -> list[int]:
+    def padding_word_level(self, utter: list[int]) -> pd.Series:
         if len(utter) > self.sent_length:
             attention_mask = torch.ones(self.sent_length)
             return pd.Series([utter[:self.sent_length], attention_mask.tolist()], index=['padded', 'attention_mask'])
@@ -84,7 +84,10 @@ class HANTokenizer():
         nested_utters_df_tokenied = nested_utters_df.apply(self.tokenize)
         nested_utters_df_numericalized = nested_utters_df_tokenied.apply(self.numericalize)
         nested_utters_df_padded_word = nested_utters_df_numericalized.apply(self.padding_word_level)
-        nested_utter_padded_word = nested_utters_df_padded_word['padded'].to_list()
+        if 'padded' not in nested_utters_df_padded_word.columns:
+            print(nested_utters_df_padded_word)
+        else:
+            nested_utter_padded_word = nested_utters_df_padded_word['padded'].to_list()
         padded_nested_utters, pad_sent_num = self.padding_sent_level(nested_utter_padded_word)
         attention_mask, _ = self.padding_sent_level(nested_utters_df_padded_word['attention_mask'].to_list(), is_attention_mask=True)
         return torch.tensor(padded_nested_utters), torch.tensor(attention_mask), pad_sent_num

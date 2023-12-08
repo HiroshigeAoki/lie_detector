@@ -3,6 +3,7 @@ import glob
 import pickle
 from tqdm import trange, tqdm
 import pandas as pd
+from transformers import BertJapaneseTokenizer
 import shutil
 import argparse
 import os, sys
@@ -10,37 +11,31 @@ import joblib
 from collections import Counter
 sys.path.append('./src/')
 from preprocess.cleaner import clean_sent, replace_term
+from utils.gmail_send import Gmailsender
+from preprocess.custom_mecab_tagger import CustomMeCabTagger
 
 
-def save_to_pickle(X, y, users, name, save_dir):
-    X_dfs, num_utters = [], []
-    with trange(len(X), desc=f"pickling({name})...") as t:
-        for _, X in zip(t, X):
-            X_df = pd.DataFrame({'raw_nested_utters': X})
-            X_dfs.append(X_df)
-            num_utters.append(len(X))
-    df = pd.DataFrame({'nested_utters': X_dfs, 'num_utters': num_utters, 'labels': y, 'users': users})
+def extract(filePaths, save_dir, kwargs):
+    """ファイルから必要なところを取り出してリストにまとめます"""
+    save_dir = save_dir
+    nested_utterances = []
+    labels = []
+    users = []
+    deleted = []
 
-    with open(f'{save_dir}/{name}.pkl', 'wb') as f:
-        pickle.dump(df, f, protocol=5)
+    outputs = joblib.Parallel(n_jobs=-1)(
+        joblib.delayed(extract_loop)(
+            filepath,
+            kwargs
+        ) for filepath in tqdm(filePaths, desc='extracting...')
+    )
 
+    for _nested_utterances, _labels, _users, _deleted in outputs:
+        nested_utterances += _nested_utterances
+        labels += _labels
+        users += _users
+        deleted += _deleted
 
-def save_to_parquet(X, y, users, name, save_dir):
-    """Save data in parquet format."""
-    X_dfs, num_utters = [], []
-    with trange(len(X), desc=f"saving to parquet({name})...") as t:
-        for _, X in zip(t, X):
-            X_df = pd.DataFrame({'raw_nested_utters': X})
-            X_dfs.append(X_df)
-            num_utters.append(len(X))
-    df = pd.DataFrame({'nested_utters': X_dfs, 'num_utters': num_utters, 'labels': y, 'users': users})
-
-    df.to_parquet(f'{save_dir}/{name}.parquet', engine='pyarrow')
-    
-
-def split_data(nested_utterances, labels, users):
-    """データをユーザーが被らないように分割"""
-    
     grouped = pd.DataFrame(
         dict(
             nested_utterances=nested_utterances,
@@ -72,34 +67,8 @@ def split_data(nested_utterances, labels, users):
         test.append(groups[i])
 
     train.extend(groups[i+1:])
+
     train, valid, test = pd.concat(train), pd.concat(valid), pd.concat(test)
-    return train, valid, test
-
-
-def extract(filePaths, save_dir, kwargs):
-    """ファイルから必要なところを取り出してリストにまとめます"""
-    save_dir = save_dir
-    nested_utterances = []
-    labels = []
-    users = []
-    deleted = []
-
-    outputs = joblib.Parallel(n_jobs=-1)(
-        joblib.delayed(extract_loop)(
-            filepath,
-            kwargs
-        ) for filepath in tqdm(filePaths, desc='extracting...')
-    )
-
-    for _nested_utterances, _labels, _users, _deleted in outputs:
-        nested_utterances += _nested_utterances
-        labels += _labels
-        users += _users
-        deleted += _deleted
-
-    # データ分割
-    train, valid, test = split_data(nested_utterances, labels, users)
-    
     X_train, y_train, users_train = train['nested_utterances'].tolist(), train['labels'].tolist(), train['users'].tolist()
     X_valid, y_valid, users_valid = valid['nested_utterances'].tolist(), valid['labels'].tolist(), valid['users'].tolist()
     X_test, y_test, users_test = test['nested_utterances'].tolist(), test['labels'].tolist(), test['users'].tolist()
@@ -129,17 +98,47 @@ def extract(filePaths, save_dir, kwargs):
     with open(f'{save_dir}/bbs.txt', 'w') as f: # for tapt pretraining of RoBERTa.
         for utterance in tqdm(bbs_data, desc="making bbs.txt"):
             f.write(utterance + '\n')
+    """
+    tokenizer, path, _data = [], [], []
 
-    # duplicate werewolf data
+    tokenizer.append(CustomMeCabTagger("-O wakati -d /usr/local/lib/mecab/dic/mecab-ipadic-neologd -r /home/haoki/Documents/vscode-workplaces/lie_detector/src/tokenizer/mecab_userdic/mecabrc"))
+    path.append(os.path.join(save_dir, 'split-train-mecab.txt'))
+    _data.append(bbs_data)
+
+    tokenizer.append(BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-large-japanese', additional_special_tokens=['<person>']))
+    path.append(os.path.join(save_dir, 'split-train-mecab-wordpiece.txt'))
+    _data.append(bbs_data)
+
+    list_args = [args for args in zip(tokenizer, path, _data)]
+
+    joblib.Parallel(n_jobs=2)(
+        joblib.delayed(make_split_train)(
+            *args,
+        ) for args in tqdm(list_args, desc='making split train data...')
+    )
+    """
+
     print("duplicating werewolf dataset")
     X_train, y_train, users_train = duplicate_werewolves(X_train, y_train, users_train)
     X_valid, y_valid, users_valid = duplicate_werewolves(X_valid, y_valid, users_valid)
     X_test, y_test, users_test = duplicate_werewolves(X_test, y_test, users_test)
 
-    # save data
     save_to_pickle(X_train, y_train, users_train, 'train', save_dir)
     save_to_pickle(X_valid, y_valid, users_valid, 'valid', save_dir)
     save_to_pickle(X_test, y_test, users_test, 'test', save_dir)
+
+
+def save_to_pickle(X, y, users, name, save_dir):
+    X_dfs, num_utters = [], []
+    with trange(len(X), desc=f"pickling({name})...") as t:
+        for _, X in zip(t, X):
+            X_df = pd.DataFrame({'raw_nested_utters': X})
+            X_dfs.append(X_df)
+            num_utters.append(len(X))
+    df = pd.DataFrame({'nested_utters': X_dfs, 'num_utters': num_utters, 'labels': y, 'users': users})
+
+    with open(f'{save_dir}/{name}.pkl', 'wb') as f:
+        pickle.dump(df, f, protocol=5)
 
 
 def extract_loop(filePath, kwargs):
@@ -183,9 +182,9 @@ def preprocess(days, participants, users_dict, role2label , used_role, min_len_c
         participant_role = participants[participant]
         if participant_role not in used_role:
             continue
-        _nested_utterance = []
         _deleted = []
         for i, day in enumerate(days):
+            _nested_utterance = []
             for utterance_inf in day['utterances']:
                 if utterance_inf.get('subject') == participant:
                     utterance = clean_sent(utterance_inf['utterance'])
@@ -196,17 +195,15 @@ def preprocess(days, participants, users_dict, role2label , used_role, min_len_c
                         _nested_utterance.append(utterance)
                     else:
                         _deleted.append(utterance)
-        _nested_utterance = sorted(set(_nested_utterance), key=_nested_utterance.index) # remove duplications
-        
-        # CO発話、占い発話、霊能発話、狩人発話をモデルを使って削除
-        
+            _nested_utterance = sorted(set(_nested_utterance), key=_nested_utterance.index) # remove duplications
+            if len(_nested_utterance) > min_num_utter:
+                nested_utterances.append(_nested_utterance)
+                labels.append(role2label[participant_role])
+                users.extend(get_keys_from_value(users_dict, participant))
+
         _deleted = sorted(set(_deleted), key=_deleted.index)
         _deleted.append("")
         deleted.extend(_deleted)
-        if len(_nested_utterance) > min_num_utter:
-            nested_utterances.append(_nested_utterance)
-            labels.append(role2label[participant_role])
-            users.extend(get_keys_from_value(users_dict, participant))
 
     return nested_utterances, labels, users, deleted
 
@@ -250,19 +247,18 @@ def make_split_train(tokenizer, path, data):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--save_dir", default='data/nested')
+    parser.add_argument("--save_dir", default='data/nested_day')
     parser.add_argument("--sample", action="store_true")
 
     args = parser.parse_args()
 
     files = sorted(glob.glob("../../corpus/BBSjsons/*/*.json"))  # 7249 files
 
-    #TODO: parquet用にsave_dirを変更する
     save_dir = args.save_dir
 
     if args.sample:
         files = files[:100]
-        save_dir = save_dir.replace("nested", "nested_sample")
+        save_dir = save_dir.replace("nested_day", "nested_sample")
 
     os.makedirs(save_dir, exist_ok=True)
     shutil.rmtree(save_dir)
@@ -278,6 +274,9 @@ def main():
     extract(files, save_dir, kwargs)
 
     print('done!')
+    if not args.sample:
+        gmail_sender = Gmailsender(subject="実行終了通知")
+        gmail_sender.send(body="mkNested.py終了")
 
 if __name__ == '__main__':
     main()

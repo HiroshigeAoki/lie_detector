@@ -1,3 +1,4 @@
+import torch
 import pickle
 import logging
 import os
@@ -8,22 +9,23 @@ from tqdm import trange
 sys.path.append('./src/')
 import torch
 import numpy as np
-from transformers import AutoTokenizer, RobertaForSequenceClassification
-from multiprocessing import Pool
+from transformers import RobertaForSequenceClassification, CamembertTokenizer
 from utils.logger import OperationEndNotifier
 import traceback
+import joblib
 
 
 class DataProcessor:
     def __init__(self, save_dir, bbs_dir='../../corpus/BBSjsons',
                  BBS_model_path='../../corpus/dataset_for_fine-tuning/categorized_level-0_with_others/254-model-epoch-3',
                  BBS_tokenizer_path='itsunoda/wolfbbsRoBERTa-small',
-                 num_cpus=4,
+                 batch_num=4,
                  sample=False):
         
         self.save_dir = save_dir
         self.bbs_dir = bbs_dir
-        self.num_cpus = num_cpus
+        self.batch_num = batch_num
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         self.sample = sample
         
@@ -70,44 +72,26 @@ class DataProcessor:
 
     def exclude_werewolf_specific_utterances(self, df: pd.DataFrame, mode: str) -> pd.DataFrame:
         try:
-            # Check if df is None or empty
             assert df is not None, "DataFrame df is None."
             assert not df.empty, "DataFrame df is empty."
 
             total_rows = len(df)
-            num_batches = self.num_cpus 
+            num_batches = self.batch_num 
             self.logger.info(f"- {mode} - Splitting {total_rows} rows of DataFrame into {num_batches} batches ")
 
             df_split = np.array_split(df, num_batches)
             
-            # Check if df_split is valid
             assert all(isinstance(batch, pd.DataFrame) for batch in df_split), "df_split contains non-DataFrame elements."
             assert all(not batch.empty for batch in df_split), "df_split contains empty DataFrame."
 
-            batch_with_mode = [(index, batch, mode) for index, batch in enumerate(df_split)]
+            results = joblib.Parallel(n_jobs=self.batch_num)(
+                joblib.delayed(self.process_batch)(index, batch, mode) for index, batch in enumerate(df_split)
+            )
+            final_df = pd.concat(results, ignore_index=True)
             
-            with Pool(processes=self.num_cpus) as pool:
-                results = pool.starmap(self.process_batch, batch_with_mode)
-            
-            # Check if results are valid
-            assert results is not None, "Results from pool.starmap is None."
-            assert all(isinstance(result, tuple) for result in results), "Results contain non-tuple elements."
-
-            results.sort(key=lambda x: x[0])
-
-            # Check if sorted results are valid
-            assert all(isinstance(batch, pd.DataFrame) for index, batch in results), "Sorted results contain non-DataFrame elements."
-
-            sorted_dfs = [batch for index, batch in results]
-
-            # Check if sorted_dfs are valid
-            assert all(isinstance(batch, pd.DataFrame) for batch in sorted_dfs), "sorted_dfs contains non-DataFrame elements."
-
-            final_df = pd.concat(sorted_dfs, ignore_index=True)
-            
-            # Check if the final DataFrame is valid
             assert final_df is not None, "Final DataFrame is None."
             assert not final_df.empty, "Final DataFrame is empty."
+            
             expected_columns = [ "nested_utters", "num_utters", "labels", "users"]
             for col in expected_columns:
                 assert col in final_df.columns, f"Final DataFrame is missing expected column {col}"
@@ -127,8 +111,9 @@ class DataProcessor:
             try:
                 # Initialize tokenizer and model for each batch here
                 self.logger.info(f"- {mode} - Loading BBS tokenizer and model for batch {index}")
-                BBStokenizer = AutoTokenizer.from_pretrained(self.BBS_tokenizer_path)
+                BBStokenizer = CamembertTokenizer.from_pretrained(self.BBS_tokenizer_path)
                 BBSmodel = RobertaForSequenceClassification.from_pretrained(self.BBS_model_path)
+                BBSmodel.to(self.device)
                 self.logger.info(f"- {mode} - Loaded BBS tokenizer and model for batch {index}")
             except Exception as e:
                 self.logger.error(f"Failed to load BBS tokenizer and model: {e}")
@@ -145,7 +130,7 @@ class DataProcessor:
 
             self.logger.info(f"- {mode} - Finished processing batch {index}")
             
-            return index, batch_df
+            return batch_df
 
         except Exception as e:
             self.logger.error(f"Failed to process batch {index} in {mode}: {e}")
@@ -161,6 +146,7 @@ class DataProcessor:
             return nested_utterances
         try:
             inputs = BBStokenizer(nested_utterances, padding='max_length', truncation=True, return_tensors='pt', max_length=128)
+            inputs = inputs.to(self.device)
         except Exception as e:
             print(e)
             return nested_utterances
@@ -214,10 +200,13 @@ class DataProcessor:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_cpus", default=3)
+    parser.add_argument("--batch_num", default=1)
+    parser.add_argument("--gpu", default="0")
     parser.add_argument("--sample", action='store_true')
     parser.add_argument("--data_dir", default='nested')
     args = parser.parse_args()
+    
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     
     if args.sample:
         save_dir = 'data/exclude_bbs_nested_sample'
@@ -229,8 +218,13 @@ if __name__ == '__main__':
     os.makedirs(save_dir, exist_ok=True)
 
     BBS_model_path = '/home/haoki/Documents/vscode-workplaces/sotuken/corpus/dataset_for_fine-tuning/categorized_level-0_with_others/254-model-epoch-3/'
+    BBS_tokenizer_path = '/home/haoki/Documents/vscode-workplaces/sotuken/tokenizing/tokenizer/'
 
-    num_cpus = int(args.num_cpus)
-
-    processor = DataProcessor(save_dir=save_dir, BBS_model_path=BBS_model_path, num_cpus=num_cpus, sample=args.sample)
+    processor = DataProcessor(
+        save_dir=save_dir, 
+        BBS_model_path=BBS_model_path, 
+        BBS_tokenizer_path=BBS_tokenizer_path,
+        batch_num=int(args.batch_num), 
+        sample=args.sample
+    )
     processor.run(data_dir=data_dir)
