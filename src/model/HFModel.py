@@ -57,7 +57,8 @@ class HFModel(AbstractModel):
         if batch_idx % 100 == 0:
             preds = torch.argmax(outputs['preds'], dim=1)
             for i in range(len(batch['input_ids'])):
+                result = "正解" if preds[i] == batch['labels'][i] else "不正解"
                 sample_text = self.tokenizer.decode(batch['input_ids'][i], skip_special_tokens=True)
-                self.logger.experiment.add_text(f"sample_{i}", f"Text: {sample_text}\nLabel: {batch['labels'][i]}\nPrediction: {preds[i]}", self.current_epoch)
+                self.logger.experiment.add_text(f"{result}(label:{batch['labels'][i]},pred{preds[i]})", f"{sample_text}", self.current_epoch)
 
         return dict(loss=outputs['loss'], batch_preds=outputs['preds'], batch_labels=batch['labels'])
