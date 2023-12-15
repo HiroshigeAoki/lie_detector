@@ -68,6 +68,10 @@ def main(args):
         label_1_dict = get_top_ngram_tfidf_scores(label_1_doc, n_gram, 1)
         label_0_dict.update(label_1_dict)
         pd.DataFrame(label_0_dict).to_csv(os.path.join(os.path.join(output_dir, f"{n_gram}"), "tfidf.csv"), index=False)
+        
+        label_0_unique_words = set(label_0_dict[f"word_0"]) - set(label_1_dict[f"word_1"])
+        label_1_unique_words = set(label_1_dict[f"word_1"]) - set(label_0_dict[f"word_0"])
+        pd.DataFrame({"unique_0": list(label_0_unique_words), "unique_1": list(label_1_unique_words)}).to_csv(os.path.join(os.path.join(output_dir, f"{n_gram}"), f"unique_words_{n_gram}.csv"), index=False)
 
 
 if __name__ == "__main__":
