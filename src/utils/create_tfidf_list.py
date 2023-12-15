@@ -64,8 +64,8 @@ def main(args):
     
     for n_gram in [1, 2, 3, 4, 5]:
         os.makedirs(os.path.join(os.path.join(output_dir, f"{n_gram}")), exist_ok=True)
-        label_0_dict = calculate_tfidf_scores(label_0_doc, n_gram, 0)
-        label_1_dict = calculate_tfidf_scores(label_1_doc, n_gram, 1)
+        label_0_dict = get_top_ngram_tfidf_scores(label_0_doc, n_gram, 0)
+        label_1_dict = get_top_ngram_tfidf_scores(label_1_doc, n_gram, 1)
         label_0_dict.update(label_1_dict)
         pd.DataFrame(label_0_dict).to_csv(os.path.join(os.path.join(output_dir, f"{n_gram}"), "tfidf.csv"), index=False)
 
