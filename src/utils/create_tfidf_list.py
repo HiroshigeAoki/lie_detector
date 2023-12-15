@@ -25,7 +25,6 @@ def tokenizer(text):
     return parsed_text.strip().split()
 
 
-
 def flatten_docs(docs):
     _flatten_docs = []
     for doc in docs["nested_utters"]:
