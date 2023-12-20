@@ -9,7 +9,7 @@ import os, sys
 import joblib
 from collections import Counter
 sys.path.append('./src/')
-from preprocess.cleaner import clean_sent, replace_term
+from preprocess.cleaner import clean_sent
 
 
 def extract(filePaths, save_dir, kwargs):
@@ -19,11 +19,14 @@ def extract(filePaths, save_dir, kwargs):
     labels = []
     users = []
     deleted = []
+    replacement_track_dict = {}
+    
+    kwargs.update({'replacement_track_dict': replacement_track_dict})
 
-    outputs = joblib.Parallel(n_jobs=-1)(
+    outputs = joblib.Parallel(n_jobs=1)(
         joblib.delayed(extract_loop)(
             filepath,
-            kwargs
+            kwargs,
         ) for filepath in tqdm(filePaths, desc='extracting...')
     )
 
@@ -88,6 +91,13 @@ def extract(filePaths, save_dir, kwargs):
     save_to_pickle(X_train, y_train, users_train, 'train', save_dir)
     save_to_pickle(X_valid, y_valid, users_valid, 'valid', save_dir)
     save_to_pickle(X_test, y_test, users_test, 'test', save_dir)
+    
+    # save replacement_track_dict
+    for key in replacement_track_dict:
+        replacement_track_dict[key]['examples'] = list(replacement_track_dict[key]['examples'])
+    sorted_replacement_track_dict = dict(sorted(replacement_track_dict.items(), key=lambda item: item[1]['count'], reverse=True))
+    with open(os.path.join(save_dir, 'replacements.json'), 'w', encoding='utf-8') as f:
+        json.dump(sorted_replacement_track_dict, f, ensure_ascii=False, indent=4)
 
 
 def save_to_pickle(X, y, users, name, save_dir):
@@ -132,7 +142,7 @@ def extract_loop(filePath, kwargs):
     return nested_utterances, labels, users, deleted
 
 
-def preprocess(days, participants, users_dict, role2label , used_role, min_len_char, min_num_utter):
+def preprocess(days, participants, users_dict, role2label , used_role, min_len_char, min_num_utter, replacement_track_dict):
     nested_utterances = [] #(user_num, utterance_num)
     labels = []
     users = []
@@ -149,8 +159,7 @@ def preprocess(days, participants, users_dict, role2label , used_role, min_len_c
             _nested_utterance = []
             for utterance_inf in day['utterances']:
                 if utterance_inf.get('subject') == participant:
-                    utterance = clean_sent(utterance_inf['utterance'])
-                    utterance = replace_term(utterance)
+                    utterance = clean_sent(utterance_inf['utterance'], replacement_track_dict)
                     if len(utterance) <= min_len_char:
                         continue
                     if utterance_inf.get('u_type') == 'say':
