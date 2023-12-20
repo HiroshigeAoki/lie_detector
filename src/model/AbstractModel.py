@@ -1,6 +1,5 @@
 import pytorch_lightning as pl
 from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1, ConfusionMatrix
-# from sklearn.metrics import precision_recall_fscore_support
 import hydra
 import os
 import torch
@@ -49,6 +48,7 @@ class AbstractModel(pl.LightningModule):
         except Exception as e:
             if self.notifier:
                 self.notifier.notify(operation='training', status='failed', message=str(e))
+            raise e
 
     def training_step_end(self, outputs):
         output = self.train_metrics(outputs['batch_preds'], outputs['batch_labels'])
@@ -72,6 +72,7 @@ class AbstractModel(pl.LightningModule):
         except Exception as e:
             if self.notifier:
                 self.notifier.notify(operation='validation', status='failed', message=str(e))
+            raise e
 
     def validation_step_end(self, outputs):
         output = self.valid_metrics(outputs['batch_preds'], outputs['batch_labels'])
@@ -85,7 +86,7 @@ class AbstractModel(pl.LightningModule):
         self.log_dict(self.valid_metrics.compute(), logger=True)
         
         if self.notifier:
-           self.notifier.notify(operation='validation', status='success', message='validation finished')
+            self.notifier.notify(operation='validation', status='success', message='validation finished')
 
     def test_step(self, batch, batch_idx):
         try:
@@ -153,6 +154,7 @@ class AbstractModel(pl.LightningModule):
             preds_softmax = torch.nn.functional.softmax(preds, dim=-1)
             df = pd.DataFrame(preds_softmax.cpu().numpy(), columns=["confidence 0", "confidence 1"])
             df["true label"] = labels.cpu().numpy()
+            df["pred label"] = preds.argmax(dim=1).cpu().numpy()
             df.to_csv("confidence.csv")
             
             # precision, recall, f1, support per class

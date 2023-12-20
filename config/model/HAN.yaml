@@ -1,7 +1,7 @@
 name: HAN
 
 args:
-  _target_: src.model.HAN.HierAttnNet
+  _target_: src.model.hierarchical.HAN.HierAttnNet
   wordattennet_params:
     vocab_size: 32000
     hidden_dim: 200
