@@ -15,7 +15,6 @@ from omegaconf import OmegaConf, DictConfig
 import os
 import dotenv
 from src.tokenizer.HFTokenizer import HFTokenizer
-from src.model.HFModel import HFModel
 from src.visualization.plot_attention import HtmlPlotter
 
 logger = logging.getLogger(__name__)
@@ -103,7 +102,8 @@ def setup_hfmodel(cfg):
                 pretrained_model_name_or_path=cfg.tokenizer.args.pretrained_model_name_or_path,
                 additional_special_tokens=list(cfg.tokenizer.args.additional_special_tokens),
                 output_attentions=output_attentions,
-        )
+        ),
+        max_length=cfg.tokenizer.args.max_length
     )
     
     data_module = hydra.utils.instantiate(
@@ -158,7 +158,7 @@ def setup_trainer(cfg):
             **OmegaConf.to_container(cfg.trainer),
             callbacks=[checkpoint_callback, early_stop_callback, lr_monitor],
             logger=tb_logger,
-            plugins=DDPPlugin(find_unused_parameters=True),
+            plugins=DDPPlugin(find_unused_parameters=False),
         )
     
     return checkpoint_callback,trainer
@@ -176,12 +176,11 @@ def main(cfg: DictConfig) -> None:
         if cfg.model.name == 'HAN':
             tokenizer, data_module, model = setup_han(cfg)
             
-        elif 'deberta' in cfg.model.name.lower():
-            tokenizer, data_module, model = setup_deberta(cfg)
+        # elif 'deberta' in cfg.model.name.lower():
+        #     tokenizer, data_module, model = setup_deberta(cfg)
             
         elif cfg.model.name.lower().startswith('hf_'):
             tokenizer, data_module, model = setup_hfmodel(cfg)
-            
         else:
             raise Exception(f'Model:{cfg.model} is invalid.')
 
@@ -190,7 +189,7 @@ def main(cfg: DictConfig) -> None:
         """train, test or plot_attention"""
         if cfg.mode == 'train':
             trainer.fit(model=model, datamodule=data_module)
-            model = HFModel.load_from_checkpoint(checkpoint_callback.best_model_path)
+            model.load_state_dict(torch.load(checkpoint_callback.best_model_path)['state_dict'])
             trainer.test(model=model, datamodule=data_module)
 
         elif cfg.mode == 'test' or cfg.mode == 'plot_attention':

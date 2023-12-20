@@ -1,32 +1,81 @@
-import re
 import neologdn
 import demoji
 import regex
 
 
-def clean_sent(sent: str) -> str:
+def add_to_replacement_track_dict(sent: str, pattern_name: str, matched_text: str, replacement: str, replacement_track_dict: dict):
+    if matched_text not in replacement_track_dict:
+        replacement_track_dict[matched_text] = {
+            'count': 0,
+            'pattern': pattern_name,
+            'replacement': replacement,
+            'examples': set()
+        }
+    replacement_track_dict[matched_text]['count'] += 1
+    if len(replacement_track_dict[matched_text]['examples']) < 3:
+        replacement_track_dict[matched_text]['examples'].add(sent)
+
+
+def track_replacements(sent, pattern_name, pattern, replacement, replacement_track_dict):
+    def replace_func(match):
+        matched_text = match.group(0)
+        add_to_replacement_track_dict(sent=sent, pattern_name=pattern_name, matched_text=matched_text, replacement=replacement, replacement_track_dict=replacement_track_dict)
+        return replacement
+
+    if len(sent) == 0:
+        return sent
+
+    modified_sent = regex.sub(pattern, replace_func, sent)
+    remained_ratio = len(modified_sent) / len(sent)
+    if pattern_name in ["remove_terms_with_pipe", "remove_with_char_first_letter"] and remained_ratio < 0.8:
+        add_to_replacement_track_dict(sent=sent, pattern_name="removed", matched_text="removed", replacement="", replacement_track_dict=replacement_track_dict)
+        return ""
+
+    return modified_sent
+
+
+def clean_sent(sent: str, replacement_track_dict: dict) -> str:
     sent = neologdn.normalize(sent, repeat=3) # 表記揺れを無くす
     sent = sent.lower()
     sent = demoji.replace(string=sent, repl="") # 絵文字削除
-    sent = re.sub((r'[\(@][^あ-ん\u30A1-\u30F4\u2E80-\u2FDF\u3005-\u3007\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\U00020000-\U0002EBEF]+?\)'), '', sent) # 顔文字削除
-    sent = re.sub(r"[m|c|u|o|つ|っ|ノ|シ|ヽ|人|⊂|＜|＞|<|>|≦|≧|≲|≳|≪|≫|《|》|\^|⌍|♪|＾|⌒|@|σ|α|β|∂|≡|=|-|ー|~|～|ﾟ|・|·|་|\*|＊|'|`|｀|´|❛|;|:|!|\?|,|\.|\(|\)|\||｜|￥|\\|\/|＼|／]*(Д|д|ω|ᴗ|∇|_ _|σ|α|β)[m|c|u|o|つ|っ|ノ|シ|ヽ|人|⊂|＜|＞|<|>|≦|≧|≲|≳|≪|≫|《|》|\^|⌍|♪|＾|⌒|@|σ|α|β|∂|≡|=|-|ー|~|～|ﾟ|・|·|་|\*|＊|'|`|｀|´|❛|;|:|!|\?|,|\.|\(|\)|\||｜|￥|\\|\/|＼|／]*", '', sent) # 顔文字削除
-    sent = re.sub(r'\^\^|orz', '', sent)
-    sent = re.sub(r'[\t\n\r]', '', sent) # remove tab, newline
-    sent = re.sub(r'[>]+[0-9]+', '', sent) # remove res anker
-    sent = re.sub(r'[@][0-9]+', '', sent) # remove res anker
-    #null_bite = re.compile(r'\x00')
-    sent = re.sub(r'https?:?//[-_.!~*\'()a-zA-Z0-9;/?:@&=+$,%#]+', '', sent) # remove URL
-    sent = re.sub(r'[\u0900-\u0FFF\u2500-\u2E52]', '', sent) #記号の削除
-    sent = re.sub(r'[0-9,]+[0-9]+', '0', sent) # numbers to 0
-    sent = re.sub(r'[0-9]+\.?[0-9]*', '0', sent) # decimal to 0
-    sent = re.sub(r'[【】\[\]]', '', sent)
-    sent = re.sub(r'0:0', '0時', sent)
-    sent = re.sub(r'0d', '0日', sent)
-    sent = re.sub(r'\|0\|0|0-0', '0', sent)
-    return sent.replace(' |　', '')
+    
+    japanese_unicode_ranges = r'[^あ-ん\u30A1-\u30F4\u2E80-\u2FDF\u3005-\u3007\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\U00020000-\U0002EBEF]+'
+    left_right_wing = r"[m|c|u|o|つ|っ|ノ|シ|ヽ|人|⊂|＜|＞|<|>|≦|≧|≲|≳|≪|≫|《|》|⊂|彡|☆||\^|⌍|♪|＾|⌒|@|σ|α|β|∂|≡|=|-|~|～|ﾟ|・|·|་|\*|＊|'|`|｀|´|❛|;|:|,|\.|\(|\)|\||｜|￥|\\|\/|＼|／]*"
+    mouse = r"(Д|д|ω|ᴗ|∇|_ _|σ|α|β)"
+    left_cheek = r'[\(（\|]@*'
+    right_cheek = r'[\)）\|]@*'
+    
+    patterns_replacements = [
+        ("remove_blankets", r'[\(（](\d+|\?)[\)）]', '?'),
+        ("remove_kaomoji_other", r'[\^|＾][\^|＾][;；]*|orz|\|*[＿|_]\|￣\|[○|◯]\|*', ''), # それ以外
+        ("remove_kaomoji_both", left_right_wing + left_cheek + japanese_unicode_ranges + right_cheek + left_right_wing, ''), # ()等で囲まれているもの
+        ("remove_kaomoji_left", left_right_wing + left_cheek + mouse + left_right_wing , ''), # 左頬あり
+        ("remove_kaomoji_right", left_right_wing + mouse + right_cheek + left_right_wing, ''), # 右頬あり
+        ("remove_.o0", r"\.+o0", ''),
+        ("remove_whitespace", r'[\t\n\r]', ''), 
+        ("remove_res_anker_numeric", r'[>]+[0-9]+', ''),
+        ("remove_res_anker_at", r'[@][0-9]+', ''),
+        ("remove_url", r'https?:?//[-_.!~*\'()a-zA-Z0-9;/?:@&=+$,%#]+', ''),
+        ("remove_symbols", r'[\u0900-\u0FFF\u2500-\u2E52]', ''),
+        ("normalize_numbers", r'[0-9,]+[0-9]+', '0'),
+        ("normalize_decimal", r'[0-9]+\.?[0-9]*', '0'),
+        ("remove_brackets", r'[【】\[\]]', ''),
+        ("replace_0_colon_0", r'0:0', '0時'),
+        ("replace_0d", r'0d', '0日'),
+        ("replace_prob", r'0/0', ''),
+        ("replace_0_pipe_0", r'\|0\|0|0-0', '0'),
+        ("replace_space", ' |　', '')
+    ]
+    
+    for args in patterns_replacements:
+        sent = track_replacements(sent, *args, replacement_track_dict)
+        
+    sent = replace_term(sent, replacement_track_dict)
+    
+    return sent
 
 
-def replace_term(sent: str) -> str:
+def replace_term(sent: str, replacement_track_dict: dict) -> str:
     # キャラクター名を置換
     names = [
         "(?V1)行商人 アルビン|アルビン|行商人|商人",
@@ -108,7 +157,6 @@ def replace_term(sent: str) -> str:
         "レジ(?!(スター))",
     ])
 
-    particles = '|'.join(["は","も","を","が","か","で","と","に","の","や","へ","なら"])
     honorific_titles = '|'.join([
         "姉", "ね[え|ぇ]", "お姉", "おね[え|ぇ]", "お嬢",
         "兄", "に[い|ぃ]", "お兄", "おに[い|ぃ]",
@@ -119,46 +167,81 @@ def replace_term(sent: str) -> str:
         "ち", "っち", "ぴょん", "ぽん|ポン","ぷ", "にゃん", "にょ", "わん", "ー*たん", "らん", "りん", "猫ちゃん", "ワンちゃん", "パンマン", "[ぴ|ピ]ー"
     ])
 
-    role_names = "狼|人狼|羊|灰|偽|白|黒|真|占|狂|狩|霊|共"
+    full_role_names = "人狼|狂人|占い師|占師|霊媒師|狩人|共有者|ハムスター人間|村人"
+    short_role_names = "狼|狂|占|霊|狩|共|村|羊"
+    short_term = "真|偽|白|黒|灰|吊"
+    short_general_term = "非|票|死|全|敵"
+    
+    particles = "は|も|を|が|か|で|と|に|の|や|へ|なら"
+
     symbols = "→|^|-|⇒|⇔|or|vs|…|=|>|<|_|≧|≠|\.|×|\+|「|:|。|、|－|ー|\(|\)|\||\\|/|/|\"|・|0|\?|\!"
 
     reg1 = regex.compile('|'.join(names))
-    sent = regex.sub(reg1, '<person>', sent)
 
     freq_words = "どっち|的には|のように|co|判定|発言|内心|視点|目線|確定|確白|確黒|希望|希望出し|両狼|確認|考察|襲撃|護衛|直吊|吊|即吊|対抗|ライン|連打|不在|パンダ|ぱんだ|ステルス|墓|ごめん|ありがとう|食[っ|べ|う]|噛|なのー|寄り|じゃなく|って|投票|sg|gj|pp|スケープゴート|ゴート|生か|潜|優秀|更新|見え(る|た|て)|入れ(て|た|る)|いや|覆[ら|る]|切る|勝|負|本命|来た|切(る|っ|ろ|り)|候補|守護|今日|明日|昨日"
     #reg2 = regex.compile(rf"(?V1)(?<!({ignore_prefix}))({name_char}|{nick_names})(?=([{particles}]*{freq_subsequent_words}|{symbols}|<person>|{role_names}|{name_char}|{particles}|{honorific_titles}|(({particles}|{symbols})|({nick_names}|{name_char}|{role_names}))))")
-    reg2 = regex.compile(rf"(?V1)({name_char}|{nick_names})(?=(({particles}|{symbols})*({freq_words}|{role_names}|{name_char}|{nick_names})|{symbols}|<person>|{particles}|{honorific_titles}))")
+    reg2 = regex.compile(rf"(?V1)({name_char}|{nick_names})(?=(({particles}|{symbols})*({freq_words}|{full_role_names}|{short_role_names}|{short_term}|{name_char}|{nick_names})|{symbols}|<person>|{particles}|{honorific_titles}))")
     #reg3 = regex.compile(rf"(?V1)(?<=(({name_char}|{role_names}|{nick_names})({particles}|{honorific_titles})|<person>|{person_particles}|{person_honorific_titles}|{symbols}|{role_names}|{name_char}|希望出し))({name_char}|{nick_names})(?!({ignore_suffix}))")
-    reg3 = regex.compile(rf"(?V1)(?<=({particles}|{freq_words}|((<person>|{role_names}|{symbols})({particles}|{honorific_titles}|{symbols})*)))({name_char}|{nick_names})")
+    reg3 = regex.compile(rf"(?V1)(?<=({particles}|{freq_words}|((<person>|{full_role_names}|{short_role_names}|{short_term}|{symbols})({particles}|{honorific_titles}|{symbols})*)))({name_char}|{nick_names})")
     #reg3 = regex.compile(rf"(?V1)(?<=(<person>))({name_char}|{nick_names})")
+    
+    reg4 = regex.compile(
+        rf"({particles})\s*({short_term})\s*"
+        rf"|({short_term})\s*({particles})"
+    )
 
-    sent = regex.sub(r'旅行(?=(に|へ|でもいかない|でもいかない|行く|いく))', '@旅@行@', sent)
-    sent = regex.sub(r'修行(?=(に|へ|する|に行く|にいく))', '@修@行@', sent)
-    sent = regex.sub(r'負傷(?=(した|して|がひどい|こそ|具合))', '@負@傷@', sent)
-    sent = regex.sub(r'(?<=(足|手|体))負傷', '@負@傷@', sent)
-    sent = regex.sub(r'宿屋(?=(に|の))', '@宿@屋@', sent)
-    sent = regex.sub(r'宿(?=(売上げ|に泊|課税))', '@宿@', sent)
-    sent = regex.sub(r'村人(?=(なら|は|の|を|か|として))', '@村@人@', sent)
-    sent = regex.sub(r'村(?=(のために|として|[は|の]負け|を滅ぼ|[は|の]勝|へ|々))', '@村@', sent)
-    sent = regex.sub(r'(?<=(この|私たちの))村', '@村@', sent)
+    patterns_replacements = [
+        ("replace_char_name_1", reg1, '<person>'),
+        
+        ("preserve", r'旅行(?=(に|へ|でもいかない|でもいかない|行く|いく))', '@旅@行@'),
+        ("preserve", r'修行(?=(に|へ|する|に行く|にいく))', '@修@行@'),
+        ("preserve", r'負傷(?=(した|して|がひどい|こそ|具合))', '@負@傷@'),
+        ("preserve", r'(?<=(足|手|体))負傷', '@負@傷@'),
+        ("preserve", r'宿屋(?=(に|の))', '@宿@屋@'),
+        ("preserve", r'宿(?=(売上げ|に泊|課税))', '@宿@'),
+        ("preserve", r'村人(?=(なら|は|の|を|か|として))', '@村@人@'),
+        ("preserve", r'村(?=(のために|として|の総意|[は|の]負け|を滅ぼ|[は|の]勝|へ|々))', '@村@'),
+        ("preserve", r'(?<=(この|私たちの))村', '@村@'),
+        ("preserve", "若者", "若@者@"),
 
-    sent = regex.sub(reg2, '<person>', sent)
-    sent = regex.sub(reg3, '<person>', sent)
+        ("replace_char_name_2", reg2, '<person>'),
+        ("replace_char_name_3", reg3, '<person>'),
+        
+        ("preserve", '@旅@行@', '旅行'),
+        ("preserve", '@修@行@', '修行'),
+        ("preserve", '@負@傷@', '負傷'),
+        ("preserve", '@宿@屋@', '宿屋'),
+        ("preserve", '@宿@', '宿'),
+        ("preserve", '@村@人@', '村人'),
+        ("preserve", '@村@', '村'),
+        ("preserve", "若@者@", "若者"),
 
-    sent = re.sub('@旅@行@', '旅行', sent)
-    sent = re.sub('@修@行@', '修行', sent)
-    sent = re.sub('@負@傷@', '負傷', sent)
-    sent = re.sub('@宿@屋@', '宿屋', sent)
-    sent = re.sub('@宿@', '宿', sent)
-    sent = re.sub('@村@人@', '村人', sent)
-    sent = re.sub('@村@', '村', sent)
+        ("reduce_repeated_chars", rf'([{short_role_names}|{short_term}])\1+', r'\1'),
+        ("remove_terms_with_pipe", rf"\|*[{short_role_names}|{short_term}|{short_general_term}|<person>|\d+|\\|\|]+(\|[{short_role_names}|{short_term}|{short_general_term}|<person>|\d+|\\|\|]+)+\|*" , ''),
 
-    sent = re.sub(r'灰{2,}', '灰', sent)
-    sent = re.sub(r'白{2,}', '白', sent)
-    sent = re.sub(r'黒{2,}', '黒', sent)
-
-    # TF-IDF値が高かった人狼用語を削除
-    # term = ['co', '占い師', '霊能者', '共有者', 'が真', '寡黙', 'ライン', '灰考察', '本決定', '仮決定', '狼が', '潜伏', '狂人', '占い', '占い先に', '狩人', '占い先', '狼は', '吊りは', '狼なら', '吊り', '占いは', '投票', '対抗', 'gj', '狼に', 'log', '吊る', '襲撃', 'が狼', 'は白', '能力者', '仮決定了解', '人間', '占い希望', 'fo', '本決定了解', '狼の', 'グレースケール', 'スライド', '狼を']
-    term = re.compile('co|占い師|霊能者|共有者|が真|寡黙|ライン|灰考察|本決定|仮決定|狼が|潜伏|狂人|占い|占い先に|狩人|占い先|狼は|吊りは|狼なら|吊り|占いは|投票|対抗|gj|狼に|log|吊る|襲撃|が狼|は白|能力者|仮決定了解|人間|占い希望|fo|本決定了解|狼の|グレースケール|スライド|狼を')
-    sent = re.sub(term, '', sent)
+        # TF-IDF値が高かった人狼用語を削除
+        ("remove_full_role_name", full_role_names, ''),
+        ("game_strategies", 'が真|は真|真っぽい|が偽|偽っぽい|白判定|白く|は白|黒判定|黒い|黒く|グレースケール|グレーゾーン|グレー|能力者|人外|人間', ''),
+        ("game_actions", '寡黙|狼が|狼を|狼の|が狼|占い対象|占わ|占っ|占う|吊り|吊る|吊って|吊れ|吊ら|co|護衛|占い|襲撃|潜伏|対抗|ローラー|ステルス|ロラ|スライド', ''),
+        ("general_game_terms", '占い希望|ライン|灰考察|本決定|議事録|仮決定|墓下|投票|fo|log|gj|gs|sg|rp', ''),
+        
+        ("preserve", "言霊", "@言@霊@"),
+        ("preserve", "突然死", "突然@死@"),
+        ("preserve", "全然", "@全@然@"),
+        
+        ("replace_short_role_name", reg4, ''),
+        
+        ("preserve", "@言@霊@", "言霊"),
+        ("preserve", "突然@死@", "突然死"),
+        ("preserve", "@全@然@", "全然"),
+        
+        ("remove_with_char_first_letter", r'([狼占狂霊全人敵]*[=ー_-・&:\s\|]*[アヴエオカクゲジシデディトニスパフペモヤヨリレ\d]|<person>)+[=ー_-・&:\s\|]*[狼占狂霊全人敵][=:|\\&-。、・]*[狼占狂霊全人敵]*', ''),
+        
+        ("remove_wolf_char", "狼", ''),
+        ("remove_pipe_slash", r"[\|\\\/_]{2,}", ''),
+    ]
+    
+    for args in patterns_replacements:
+        sent = track_replacements(sent, *args, replacement_track_dict)
+    
     return sent
