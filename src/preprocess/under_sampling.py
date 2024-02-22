@@ -3,12 +3,12 @@ import pandas as pd
 import os
 
 
-def under_sampling(data_dir, save_dir, num_train):
+def under_sampling(data, save_dir, num_train):
     num_vaild = num_train // 10
     num_test = num_train // 10
-    train = pd.read_pickle(f"{data_dir}/train.pkl")
-    valid = pd.read_pickle(f"{data_dir}/valid.pkl")
-    test = pd.read_pickle(f"{data_dir}/test.pkl")
+    train = pd.read_pickle(f"{data}/train.pkl")
+    valid = pd.read_pickle(f"{data}/valid.pkl")
+    test = pd.read_pickle(f"{data}/test.pkl")
     
     sampling_data(train, num_train).to_pickle(f"{save_dir}/train.pkl")
     sampling_data(valid, num_vaild).to_pickle(f"{save_dir}/valid.pkl")
@@ -30,13 +30,13 @@ def sampling_data(df: pd.DataFrame, num_sample: int):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_train", default=1000)
-    parser.add_argument("--data_dir", default="nested_day_unbalance")
+    parser.add_argument("--data", default="nested_day_unbalance")
     args = parser.parse_args()
     
-    data_dir = f"data/{args.data_dir}"
-    save_dir = f"data/{args.data_dir}_{args.num_train}"
+    data = f"data/{args.data}"
+    save_dir = f"data/{args.data.replace('unbalance', '')}/under_sampling_{args.num_train}"
     os.makedirs(save_dir, exist_ok=True)
-    under_sampling(data_dir, save_dir, int(args.num_train))
+    under_sampling(data, save_dir, int(args.num_train))
 
 if __name__ == "__main__":
     main()

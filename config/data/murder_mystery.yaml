@@ -1,3 +1,4 @@
 name: murder_mystery
 
 dir: data/murder_mystery/
+data_type: flat

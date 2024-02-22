@@ -4,21 +4,22 @@ import traceback
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
-from pytorch_lightning.plugins import DDPPlugin
 from pytorch_lightning.callbacks import LearningRateMonitor
-
 from transformers import AutoTokenizer
+from pytorch_lightning.strategies import DDPStrategy
 
 import hydra
 from omegaconf import OmegaConf, DictConfig
 
 import os
+import re
 import dotenv
+from glob import glob
 from src.tokenizer.HFTokenizer import HFTokenizer
 from src.visualization.plot_attention import HtmlPlotter
+from src.visualization.create_transfomer_attention_vis import create_transfomer_attention_vis
 
 logger = logging.getLogger(__name__)
-
 dotenv.load_dotenv()
 
 def setup_han(cfg):
@@ -148,7 +149,6 @@ def setup_trainer(cfg):
     checkpoint_callback = hydra.utils.instantiate(
             cfg.checkpoint_callback,
         )
-
     tb_logger = pl_loggers.TensorBoardLogger(
             ".", "", "", log_graph=True, default_hp_metric=False)
 
@@ -158,10 +158,35 @@ def setup_trainer(cfg):
             **OmegaConf.to_container(cfg.trainer),
             callbacks=[checkpoint_callback, early_stop_callback, lr_monitor],
             logger=tb_logger,
-            plugins=DDPPlugin(find_unused_parameters=False),
+            strategy=DDPStrategy(find_unused_parameters=True)
         )
     
     return checkpoint_callback,trainer
+
+
+def check_if_exist_checkpoint(checkpoint_path):
+    if not os.path.exists(checkpoint_path):
+        raise Exception(
+            f'checkpoint_path:{checkpoint_path} is not exist.')
+    return
+
+
+def find_file_with_lowest_loss(directory):
+    min_loss = float('inf')
+    file_with_min_loss = None
+
+    # ディレクトリ内の全ファイルを走査
+    for filename in os.listdir(directory):
+        # ファイル名からlossの値を抽出
+        match = re.search(r"loss-([0-9.]+).ckpt", filename)
+        if match:
+            loss = float(match.group(1))
+            # 最小のlossを更新
+            if loss < min_loss:
+                min_loss = loss
+                file_with_min_loss = filename
+
+    return file_with_min_loss
 
 
 @hydra.main(config_path="config", config_name="defaults")
@@ -175,10 +200,6 @@ def main(cfg: DictConfig) -> None:
         """instantiate"""
         if cfg.model.name == 'HAN':
             tokenizer, data_module, model = setup_han(cfg)
-            
-        # elif 'deberta' in cfg.model.name.lower():
-        #     tokenizer, data_module, model = setup_deberta(cfg)
-            
         elif cfg.model.name.lower().startswith('hf_'):
             tokenizer, data_module, model = setup_hfmodel(cfg)
         else:
@@ -189,21 +210,25 @@ def main(cfg: DictConfig) -> None:
         """train, test or plot_attention"""
         if cfg.mode == 'train':
             trainer.fit(model=model, datamodule=data_module)
+            #find_file_with_lowest_loss("./checkpoints")
+            #model.load_state_dict(torch.load(os.path.join("./checkpoints", find_file_with_lowest_loss("./checkpoints")))['state_dict'])
             model.load_state_dict(torch.load(checkpoint_callback.best_model_path)['state_dict'])
             trainer.test(model=model, datamodule=data_module)
 
         elif cfg.mode == 'test' or cfg.mode == 'plot_attention':
             if cfg.checkpoint_dir is not None:
-                checkpoint_path = os.path.join(
-                    cfg.workplace_dir, "outputs", cfg.checkpoint_dir, f'epoch={cfg.best_epoch}.ckpt')
+                if cfg.checkpoint_dir.startswith("model/"):
+                    files = glob(os.path.join(cfg.workplace_dir, cfg.checkpoint_dir, "*.ckpt"))
+                    if len(files) == 0:
+                        raise Exception(f'Checkpoint directory:{cfg.checkpoint_dir} is not exist.')
+                    checkpoint_path = files[0]
+                else:
+                    checkpoint_path = os.path.join(
+                        cfg.workplace_dir, "outputs", cfg.checkpoint_dir, f'epoch={cfg.best_epoch}.ckpt')
             else:
                 checkpoint_path = os.path.join(
                     cfg.workplace_dir, "outputs", cfg.model.name, cfg.data.name, f'checkpoints/epoch={cfg.best_epoch}.ckpt')
-
-            if not os.path.exists(checkpoint_path):
-                raise Exception(
-                    f'checkpoint_path:{checkpoint_path} is not exist.')
-
+            check_if_exist_checkpoint(checkpoint_path)
             checkpoint = torch.load(checkpoint_path)
             model.load_state_dict(checkpoint['state_dict'])
 
@@ -211,10 +236,13 @@ def main(cfg: DictConfig) -> None:
                 trainer.test(model, datamodule=data_module)
 
             elif cfg.mode == 'plot_attention':
-                outputs = trainer.predict(model, datamodule=data_module)
-                plotter = HtmlPlotter(cfg, tokenizer, outputs)
-                plotter.create_html()
-
+                if cfg.model.name == 'HAN':
+                    outputs = trainer.predict(model, datamodule=data_module)
+                    plotter = HtmlPlotter(cfg, tokenizer, outputs)
+                    plotter.create_html()
+                elif cfg.model.name == "hf_bigbird":
+                    trainer.predict(model, datamodule=data_module)
+            
         else:
             raise Exception(f'Mode:{cfg.mode} is invalid.')
 

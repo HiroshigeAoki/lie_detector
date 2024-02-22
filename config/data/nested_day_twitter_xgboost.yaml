@@ -1,0 +1,4 @@
+name: nested_day_twitter_xgboost
+
+dir: data/nested_day_twitter/xgboost/top_100
+data_type: flat

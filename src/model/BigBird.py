@@ -29,7 +29,8 @@ class BigBird(AbstractModel):
     def forward(
         self, 
         input_ids, 
-        attention_mask,
+        attention_mask=None,
+        token_type_ids=None,
         output_attentions=False,
         labels=None,
     ):

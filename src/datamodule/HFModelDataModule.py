@@ -27,41 +27,46 @@ class CreateDataset(Dataset):
         labels = self.df.loc[:,'labels'].iloc[index]
 
         if self.data_type == "nested":
-            input_ids, attention_mask, pad_sent_num = self.tokenizer.batch_encode_nested(nested_utters, padding='max_length', return_tensors='pt', max_length=768, truncation=True)
-            return dict(input_ids=input_ids, attention_mask=attention_mask, labels=torch.tensor(labels), pad_sent_num=pad_sent_num)
+            input_ids, attention_mask, pad_sent_num = self.tokenizer.batch_encode_nested(nested_utters, padding='max_length', return_tensors='pt', truncation=True)
+            return dict(input_ids=input_ids, attention_mask=attention_mask, labels=torch.tensor(labels), pad_sent_num=pad_sent_num, indices=index)
         
         elif self.data_type == "flat":
             encodes = self.tokenizer.encode_flat(nested_utters)
-            return dict(labels=torch.tensor(labels), **encodes)
-
+            return dict(labels=torch.tensor(labels), indices=index, **encodes)
+        
         else:
             raise ValueError(f"data_type:{self.data_type} is invalid.")
 
 
 class CreateHFModelDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir: str, batch_size: int, tokenizer, is_scam_game_data, is_murder_mystery_data, data_type: Literal["flat", "nested"]="nested"):
+    def __init__(self, data_dir: str, batch_size: int, tokenizer, is_scam_game_data, is_murder_mystery_data, data_type: str = "nested"):
         super().__init__()
-        self.train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
-        self.valid_df = pd.read_pickle(os.path.join(data_dir, "valid.pkl"))
-        self.test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
+        self.n_cpus = os.cpu_count()
         
         if isinstance(tokenizer, DictConfig):
             self.tokenizer = hydra.utils.instantiate(tokenizer)
         else:
             self.tokenizer = tokenizer
 
-        self.n_cpus = os.cpu_count()
+        self.n_cpus = 8
 
         self.save_hyperparameters()
 
     def setup(self, stage: Optional[str] = None):
         # set train and valid dataset
         if stage == 'fit':
-            self.train_ds = CreateDataset(self.train_df, self.hparams.batch_size, self.tokenizer, data_type=self.hparams.data_type)
-            self.valid_ds = CreateDataset(self.valid_df, self.hparams.batch_size, self.tokenizer, data_type=self.hparams.data_type)
+            self.train_ds = CreateDataset(
+                pd.read_pickle(os.path.join(self.hparams.data_dir, "train.pkl")), 
+                self.hparams.batch_size, self.tokenizer, data_type=self.hparams.data_type
+            )
+            self.valid_ds = CreateDataset(
+                pd.read_pickle(os.path.join(self.hparams.data_dir, "valid.pkl")), 
+                self.hparams.batch_size, self.tokenizer, data_type=self.hparams.data_type)
         # set test dataset
         if stage == 'test' or stage == 'predict' or stage is None:
-            self.test_ds = CreateDataset(self.test_df, self.hparams.batch_size, self.tokenizer, data_type=self.hparams.data_type)
+            self.test_ds = CreateDataset(
+                pd.read_pickle(os.path.join(self.hparams.data_dir, "test.pkl")), 
+                self.hparams.batch_size, self.tokenizer, data_type=self.hparams.data_type)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.train_ds, batch_size=self.hparams.batch_size,
@@ -79,7 +84,14 @@ class CreateHFModelDataModule(pl.LightningDataModule):
         return self.test_dataloader()
 
     def collate_fn(self, batch) -> dict:
-        input_ids = pad_sequence([item['input_ids'] for item in batch], batch_first=True, padding_value=0)
-        attention_mask = pad_sequence([item['attention_mask'] for item in batch], batch_first=True, padding_value=0)
+        batch.sort(key=lambda x: len(x['input_ids']), reverse=True)
+        input_ids = pad_sequence([item['input_ids'] for item in batch], batch_first=True, padding_value=self.tokenizer.pad_index)
+        attention_mask = pad_sequence([item['attention_mask'] for item in batch], batch_first=True, padding_value=self.tokenizer.pad_index)
         labels = torch.stack([item['labels'] for item in batch])
-        return dict(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        indices = batch[0]['indices']
+            
+        if self.hparams.data_type == "nested":
+            pad_sent_num = [item['pad_sent_num'] for item in batch]
+            return dict(input_ids=input_ids, attention_mask=attention_mask, labels=labels, pad_sent_num=pad_sent_num, indices=indices)
+        elif self.hparams.data_type == "flat":
+            return dict(input_ids=input_ids, attention_mask=attention_mask, labels=labels, indices=indices)

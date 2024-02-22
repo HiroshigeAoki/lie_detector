@@ -90,12 +90,20 @@ def extract(filePaths, save_dir, kwargs):
             kwargs
         ) for filepath in tqdm(filePaths, desc='extracting...')
     )
+    
+    aggregated_replacement_track_dict = {}
 
-    for _nested_utterances, _labels, _users, _deleted in outputs:
+    for _nested_utterances, _labels, _users, _deleted, partial_replacement_track_dict in outputs:
         nested_utterances += _nested_utterances
         labels += _labels
         users += _users
         deleted += _deleted
+
+        for key, value in partial_replacement_track_dict.items():
+            if key not in aggregated_replacement_track_dict:
+                aggregated_replacement_track_dict[key] = value
+            else:
+                aggregated_replacement_track_dict[key]['count'] += value['count']
 
     # データ分割
     train, valid, test = split_data(nested_utterances, labels, users)
@@ -147,6 +155,8 @@ def extract_loop(filePath, kwargs):
     delete_nested_utterances = []
     participants = {}
     users_dict = {}
+    
+    replacement_track_dict = {}
 
     with open(filePath, encoding='utf-8') as f:
         data = json.load(f)
@@ -160,18 +170,18 @@ def extract_loop(filePath, kwargs):
     epilogue = data['days'][0]
     prologue = data['days'][-1]
 
-    nested_utterances, labels, users, _deleted = preprocess(days=days, participants=participants, users_dict=users_dict, **kwargs)
+    nested_utterances, labels, users, _deleted = preprocess(days=days, participants=participants, users_dict=users_dict, replacement_track_dict=replacement_track_dict,  **kwargs)
     deleted.extend(_deleted)
-    _delete_nested_utterances, _, _, _deleted = preprocess(days=[epilogue, prologue], participants=participants, users_dict=users_dict, **kwargs)
+    _delete_nested_utterances, _, _, _deleted = preprocess(days=[epilogue, prologue], participants=participants, users_dict=users_dict, replacement_track_dict=replacement_track_dict, **kwargs)
     for utterances in _delete_nested_utterances:
         delete_nested_utterances.extend(utterances)
         delete_nested_utterances.append("")
     deleted.extend(delete_nested_utterances + deleted)
 
-    return nested_utterances, labels, users, deleted
+    return nested_utterances, labels, users, deleted, replacement_track_dict
 
 
-def preprocess(days, participants, users_dict, role2label , used_role, min_len_char, min_num_utter):
+def preprocess(days, participants, users_dict, role2label , used_role, min_len_char, min_num_utter, replacement_track_dict):
     nested_utterances = [] #(user_num, utterance_num)
     labels = []
     users = []
@@ -188,7 +198,7 @@ def preprocess(days, participants, users_dict, role2label , used_role, min_len_c
         for i, day in enumerate(days):
             for utterance_inf in day['utterances']:
                 if utterance_inf.get('subject') == participant:
-                    utterance = clean_sent(utterance_inf['utterance'])
+                    utterance = clean_sent(utterance_inf['utterance'], replacement_track_dict)
                     utterance = replace_term(utterance)
                     if len(utterance) <= min_len_char:
                         continue

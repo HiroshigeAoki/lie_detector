@@ -17,10 +17,10 @@ import joblib
 
 class DataProcessor:
     def __init__(self, save_dir, bbs_dir='../../corpus/BBSjsons',
-                 BBS_model_path='../../corpus/dataset_for_fine-tuning/categorized_level-0_with_others/254-model-epoch-3',
-                 BBS_tokenizer_path='itsunoda/wolfbbsRoBERTa-small',
-                 batch_num=4,
-                 sample=False):
+                BBS_model_path='../../corpus/dataset_for_fine-tuning/categorized_level-0_with_others/254-model-epoch-3',
+                BBS_tokenizer_path='itsunoda/wolfbbsRoBERTa-small',
+                batch_num=4,
+                sample=False):
         
         self.save_dir = save_dir
         self.bbs_dir = bbs_dir
@@ -97,7 +97,7 @@ class DataProcessor:
                 assert col in final_df.columns, f"Final DataFrame is missing expected column {col}"
 
             return final_df
-       
+
         except Exception as e:
             self.logger.error(f"Error in exclude_werewolf_specific_utterances: {e}")
             raise

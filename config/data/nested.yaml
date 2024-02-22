@@ -1,3 +1,4 @@
 name: nested
 
 dir: data/nested/
+data_type: nested

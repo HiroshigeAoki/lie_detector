@@ -24,14 +24,14 @@ best_epoch: 0
 # default flags are commented to avoid clustering the hyperparameters
 trainer:
   # accelerator: None
-  gpus: [0]
+  accelerator: "gpu"
+  devices: [0]
   accumulate_grad_batches: 1
   benchmark: True
   deterministic: True
   fast_dev_run: False
   max_epochs: 10
   precision: 16
-  accelerator: ddp
 
 early_stopping:
   _target_ : pytorch_lightning.callbacks.EarlyStopping
@@ -43,10 +43,8 @@ early_stopping:
 
 checkpoint_callback:
   _target_: pytorch_lightning.callbacks.ModelCheckpoint
-  #dirpath=checkpoints_dir
   filename: '{epoch}'
   monitor: 'val_loss'
   verbose: True
-  # save_last: None
   save_top_k: 1
   mode: 'min'

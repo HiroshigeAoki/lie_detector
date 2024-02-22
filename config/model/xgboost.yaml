@@ -1,0 +1,5 @@
+name: xgboost
+
+args:
+  model_name: xgboost
+  trained_model_path: None

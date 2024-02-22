@@ -1,0 +1,19 @@
+name: hf_hierbert
+
+args:
+  _target_: src.model.BERT_GRU.HierBERT.HierBERT
+  wordattennet_params:
+    pretrained_model_name_or_path: cl-tohoku/bert-base-japanese-v3
+    additional_special_tokens: ['<person>']
+    personal_pronouns: ['君', 'きみ', 'あなた' ,'彼', '彼女']
+    dropout: 0.1
+
+  sentattennet_params:
+    hidden_dim: 256
+  
+  dropout: 0.1
+  num_class: 2
+
+data_module:
+  _target_: src.datamodule.HFModelDataModule.CreateHFModelDataModule
+  batch_size: 64

@@ -1,0 +1,4 @@
+name: nested_day_twitter
+
+dir: data/nested_day_twitter/
+data_type: flat

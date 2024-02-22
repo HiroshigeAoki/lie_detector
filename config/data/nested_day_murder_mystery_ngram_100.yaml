@@ -1,0 +1,4 @@
+name: nested_day_murder_mystery_ngram_100
+
+dir: data/nested_day_murder_mystery_ngram_100
+data_type: flat

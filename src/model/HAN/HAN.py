@@ -3,8 +3,9 @@ from torch import nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
-from src.model.hierarchical.regularize import embedded_dropout, WeightDrop, LockedDropout
-from src.model.hierarchical.AbstractHierModel import AbstractHierModel
+from src.model.HAN.regularize import embedded_dropout, WeightDrop, LockedDropout
+from src.model.AbstractHierModel import AbstractHierModel
+
 
 """hierarchical attention network"""
 class HierAttnNet(AbstractHierModel):
@@ -138,7 +139,6 @@ class SentAttnNet(pl.LightningModule):
         h_t, h_n = self.rnn(X)
         a, v = self.sent_attn(h_t, attention_mask[:,:,0])
         return a, v #doc vector (bsz, sent_hidden_dim*2)
-
 
 
 class AttentionWithContext(pl.LightningModule):

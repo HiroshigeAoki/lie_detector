@@ -9,7 +9,7 @@ import os, sys
 import joblib
 from collections import Counter
 sys.path.append('./src/')
-from preprocess.cleaner import clean_sent
+from preprocess.cleaner import clean_sent, replace_term
 
 
 def extract(filePaths, save_dir, kwargs):
@@ -19,22 +19,28 @@ def extract(filePaths, save_dir, kwargs):
     labels = []
     users = []
     deleted = []
-    replacement_track_dict = {}
     
-    kwargs.update({'replacement_track_dict': replacement_track_dict})
 
-    outputs = joblib.Parallel(n_jobs=1)(
+    outputs = joblib.Parallel(n_jobs=-1)(
         joblib.delayed(extract_loop)(
             filepath,
             kwargs,
         ) for filepath in tqdm(filePaths, desc='extracting...')
     )
 
-    for _nested_utterances, _labels, _users, _deleted in outputs:
+    aggregated_replacement_track_dict = {}
+
+    for _nested_utterances, _labels, _users, _deleted, partial_replacement_track_dict in tqdm(outputs, desc='aggregating joblib outputs...'):
         nested_utterances += _nested_utterances
         labels += _labels
         users += _users
         deleted += _deleted
+        
+        for key, value in partial_replacement_track_dict.items():
+            if key not in aggregated_replacement_track_dict:
+                aggregated_replacement_track_dict[key] = value
+            else:
+                aggregated_replacement_track_dict[key]['count'] += value['count']
 
     grouped = pd.DataFrame(
         dict(
@@ -87,17 +93,16 @@ def extract(filePaths, save_dir, kwargs):
     stats_df.to_csv(os.path.join(save_dir, 'raw_stats.csv'))
     stats_df.to_latex(os.path.join(save_dir, 'raw_stats.tex'))
 
-    print("duplicating werewolf dataset")
     save_to_pickle(X_train, y_train, users_train, 'train', save_dir)
     save_to_pickle(X_valid, y_valid, users_valid, 'valid', save_dir)
     save_to_pickle(X_test, y_test, users_test, 'test', save_dir)
     
-    # save replacement_track_dict
-    for key in replacement_track_dict:
-        replacement_track_dict[key]['examples'] = list(replacement_track_dict[key]['examples'])
-    sorted_replacement_track_dict = dict(sorted(replacement_track_dict.items(), key=lambda item: item[1]['count'], reverse=True))
+    for key in tqdm(aggregated_replacement_track_dict, desc='save replacement_track_dict'):
+        aggregated_replacement_track_dict[key]['examples'] = list(aggregated_replacement_track_dict[key]['examples'])
+    sorted_replacement_track_dict = dict(sorted(aggregated_replacement_track_dict.items(), key=lambda item: item[1]['count'], reverse=True))
     with open(os.path.join(save_dir, 'replacements.json'), 'w', encoding='utf-8') as f:
         json.dump(sorted_replacement_track_dict, f, ensure_ascii=False, indent=4)
+
 
 
 def save_to_pickle(X, y, users, name, save_dir):
@@ -118,6 +123,8 @@ def extract_loop(filePath, kwargs):
     delete_nested_utterances = []
     participants = {}
     users_dict = {}
+    
+    replacement_track_dict = {}
 
     with open(filePath, encoding='utf-8') as f:
         data = json.load(f)
@@ -131,15 +138,15 @@ def extract_loop(filePath, kwargs):
     epilogue = data['days'][0]
     prologue = data['days'][-1]
 
-    nested_utterances, labels, users, _deleted = preprocess(days=days, participants=participants, users_dict=users_dict, **kwargs)
+    nested_utterances, labels, users, _deleted = preprocess(days=days, participants=participants, users_dict=users_dict, replacement_track_dict=replacement_track_dict, **kwargs)
     deleted.extend(_deleted)
-    _delete_nested_utterances, _, _, _deleted = preprocess(days=[epilogue, prologue], participants=participants, users_dict=users_dict, **kwargs)
+    _delete_nested_utterances, _, _, _deleted = preprocess(days=[epilogue, prologue], participants=participants, users_dict=users_dict, replacement_track_dict=replacement_track_dict, **kwargs)
     for utterances in _delete_nested_utterances:
         delete_nested_utterances.extend(utterances)
         delete_nested_utterances.append("")
     deleted.extend(delete_nested_utterances + deleted)
 
-    return nested_utterances, labels, users, deleted
+    return nested_utterances, labels, users, deleted, replacement_track_dict
 
 
 def preprocess(days, participants, users_dict, role2label , used_role, min_len_char, min_num_utter, replacement_track_dict):
@@ -160,6 +167,7 @@ def preprocess(days, participants, users_dict, role2label , used_role, min_len_c
             for utterance_inf in day['utterances']:
                 if utterance_inf.get('subject') == participant:
                     utterance = clean_sent(utterance_inf['utterance'], replacement_track_dict)
+                    utterance = replace_term(utterance, replacement_track_dict)
                     if len(utterance) <= min_len_char:
                         continue
                     if utterance_inf.get('u_type') == 'say':
