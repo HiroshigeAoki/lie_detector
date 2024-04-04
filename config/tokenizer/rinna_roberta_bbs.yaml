@@ -1,8 +1,0 @@
-name: rinna_roberta_bbs
-
-tokenizer:
-  _target_: src.tokenizer.HFT5Tokenizer.HFT5Tokenizer
-  sent_length: 256
-  doc_length: 256
-  pretrained_model: 'model/rinna-roberta-bbs-epoch28/'
-  pad_index: 3
