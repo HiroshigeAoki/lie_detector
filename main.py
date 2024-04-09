@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 dotenv.load_dotenv()
 
 
+def adjust_config_for_dataset(cfg):
+    is_murder_mystery_data = False
+    if cfg.data.name == "murder_mystery":
+        cfg.model.data_module.batch_size = 1
+        is_murder_mystery_data = True
+
+    return is_murder_mystery_data
+
+
 def setup_han(cfg):
     cfg.tokenizer.args.cache_dir = os.path.join(
         cfg.workplace_dir, cfg.tokenizer.args.cache_dir
@@ -42,13 +51,12 @@ def setup_han(cfg):
 
     tokenizer = hydra.utils.instantiate(cfg.tokenizer.args, data_dir=cfg.data.dir)
 
-    is_scam_game_data, is_murder_mystery_data = adjust_config_for_dataset(cfg)
+    is_murder_mystery_data = adjust_config_for_dataset(cfg)
 
     data_module = hydra.utils.instantiate(
         cfg.model.data_module,
         data_dir=cfg.data.dir,
         tokenizer=tokenizer,
-        is_scam_game_data=is_scam_game_data,
         is_murder_mystery_data=is_murder_mystery_data,
     )
 
@@ -56,15 +64,13 @@ def setup_han(cfg):
         cfg.model.args,
         optim=cfg.optim,
         embedding_matrix=tokenizer.embedding_matrix,
-        is_scam_game=is_scam_game_data,
-        is_murder_mystery=is_murder_mystery_data,
         _recursive_=False,
     )
     return tokenizer, data_module, model
 
 
 def setup_deberta(cfg):
-    is_scam_game_data, is_murder_mystery_data = adjust_config_for_dataset(cfg)
+    is_murder_mystery_data = adjust_config_for_dataset(cfg)
 
     if "deberta" not in cfg.tokenizer.name.lower():
         raise Exception(f"Tokenizer:{cfg.tokenizer.name} is invalid for Deberta model.")
@@ -83,14 +89,12 @@ def setup_deberta(cfg):
         cfg.model.data_module,
         data_dir=cfg.data.dir,
         tokenizer=tokenizer,
-        is_scam_game_data=is_scam_game_data,
         is_murder_mystery_data=is_murder_mystery_data,
     )
 
     model = hydra.utils.instantiate(
         cfg.model.args,
         optim=cfg.optim,
-        is_scam_game=is_scam_game_data,
         _recursive_=False,
     )
 
@@ -98,7 +102,7 @@ def setup_deberta(cfg):
 
 
 def setup_hfmodel(cfg):
-    is_scam_game_data, is_murder_mystery_data = adjust_config_for_dataset(cfg)
+    is_murder_mystery_data = adjust_config_for_dataset(cfg)
     output_attentions = False
 
     if cfg.mode == "test" or "plot_attention":
@@ -119,7 +123,6 @@ def setup_hfmodel(cfg):
         cfg.model.data_module,
         data_dir=cfg.data.dir,
         tokenizer=tokenizer,
-        is_scam_game_data=is_scam_game_data,
         is_murder_mystery_data=is_murder_mystery_data,
         data_type=cfg.data.data_type,
     )
@@ -127,26 +130,10 @@ def setup_hfmodel(cfg):
     model = hydra.utils.instantiate(
         cfg.model.args,
         optim=cfg.optim,
-        is_scam_game=is_scam_game_data,
-        is_murder_mystery=is_murder_mystery_data,
         _recursive_=False,
     )
 
     return tokenizer, data_module, model
-
-
-def adjust_config_for_dataset(cfg):
-    is_scam_game_data = False
-    if cfg.data.name == "scam_game":
-        cfg.model.data_module.batch_size = 1
-        is_scam_game_data = True
-
-    is_murder_mystery_data = False
-    if cfg.data.name == "murder_mystery":
-        cfg.model.data_module.batch_size = 1
-        is_murder_mystery_data = True
-
-    return is_scam_game_data, is_murder_mystery_data
 
 
 def setup_trainer(cfg):
@@ -177,24 +164,6 @@ def check_if_exist_checkpoint(checkpoint_path):
     if not os.path.exists(checkpoint_path):
         raise Exception(f"checkpoint_path:{checkpoint_path} is not exist.")
     return
-
-
-def find_file_with_lowest_loss(directory):
-    min_loss = float("inf")
-    file_with_min_loss = None
-
-    # ディレクトリ内の全ファイルを走査
-    for filename in os.listdir(directory):
-        # ファイル名からlossの値を抽出
-        match = re.search(r"loss-([0-9.]+).ckpt", filename)
-        if match:
-            loss = float(match.group(1))
-            # 最小のlossを更新
-            if loss < min_loss:
-                min_loss = loss
-                file_with_min_loss = filename
-
-    return file_with_min_loss
 
 
 @hydra.main(config_path="config", config_name="defaults")

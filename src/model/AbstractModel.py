@@ -23,8 +23,6 @@ class AbstractModel(pl.LightningModule):
         self,
         optim: dict,
         use_gmail_notification: bool = False,
-        is_scam_game: bool = False,
-        is_murder_mystery: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -49,9 +47,6 @@ class AbstractModel(pl.LightningModule):
         self.test_metrics = metrics.clone(prefix="test_")
 
         self.cm = ConfusionMatrix(task="binary", num_classes=2)
-
-        self.is_scam_game = is_scam_game
-        self.is_murder_mystery = is_murder_mystery
 
     def training_step(self, batch, batch_idx):
         try:

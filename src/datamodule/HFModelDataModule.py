@@ -64,8 +64,6 @@ class CreateHFModelDataModule(pl.LightningDataModule):
         data_dir: str,
         batch_size: int,
         tokenizer,
-        is_scam_game_data,
-        is_murder_mystery_data,
         data_type: str = "nested",
     ):
         super().__init__()
